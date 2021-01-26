@@ -1,9 +1,10 @@
 #include <iostream>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <iomanip>
-#include <intrin.h>
+#include <x86intrin.h>
 #include "cuda_profiler_api.h"
 #include "DyckNew_Parallel_GPU.h"
 #include <thrust/sort.h>
@@ -12,7 +13,7 @@
 #include <thrust/scan.h>
 #include <string.h>
 
-const char const * FILENAMES[]={"./inputs/Long_8.txt", "./inputs/Long_16.txt", "./inputs/Long_32.txt", "./inputs/Long_64.txt"};
+const char * FILENAMES[]={"./inputs/Long_8.txt", "./inputs/Long_16.txt", "./inputs/Long_32.txt", "./inputs/Long_64.txt"};
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
@@ -159,7 +160,7 @@ long *sort(int length, int numBlock, long * arr)
   thrust::device_ptr<long> devArr(cudaArr);
   thrust::stable_sort_by_key(thrust::cuda::par, cudaArr, cudaArr+length, cudaArr+length);
   long *res;
-  cudaMallocManaged(&res, length*ROW1*sizeof(long));
+  cudaMalloc(&res, length*ROW1*sizeof(long));
   inv<<<numBlock, BLOCKSIZE>>>(length, cudaArr, res);
   cudaDeviceSynchronize();
   cudaFree(cudaArr);
@@ -232,22 +233,21 @@ void changeDepth(int length, char* strArr, char* res)
   }
 }
 
-long *findDepthAndCount(int length, int numBlock, char * string)
+long findDepthAndCount(int length, int numBlock, long** arr, char * string)
 {
-  long * arr;
-  cudaMallocManaged(&arr, length*ROW3*sizeof(long));
-  initialize<<<numBlock, BLOCKSIZE>>>(0, length, string, arr);
+  cudaMalloc(arr, length*ROW3*sizeof(long));
+  initialize<<<numBlock, BLOCKSIZE>>>(0, length, string, *arr);
   cudaDeviceSynchronize();
   //gpuErrchk( cudaPeekAtLastError() );
-  thrust::inclusive_scan(thrust::cuda::par, arr, arr + length, arr);
-  thrust::inclusive_scan(thrust::cuda::par, arr + length, arr + ROW2*length, arr + length);
-  thrust::exclusive_scan(thrust::cuda::par, arr + ROW2*length, arr + ROW3*length, arr + ROW2*length);
-
-  if(arr[ROW2*length - 1] == 0){
-    return arr;
+  thrust::inclusive_scan(thrust::cuda::par, (*arr), (*arr) + length, (*arr));
+  thrust::inclusive_scan(thrust::cuda::par, (*arr) + length, (*arr) + ROW2*length, (*arr) + length);
+  thrust::exclusive_scan(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*arr) + ROW2*length);
+  long res;
+  cudaMemcpy(&res, (*arr)+(ROW2*length)-1, sizeof(long), cudaMemcpyDeviceToHost);
+  if(res == 0){
+    return 1;
   }
-  arr[0] = -1;
-  return arr;
+  return -1;
 }
 
 __global__
@@ -299,14 +299,12 @@ void countNodesRepititionStep(int length, long* arr, int i, long* res){
 
 long* countNodesRepitition(int length, int numBlock, long* arr)
 {
-  int nextP2 = length == 1 ? 1 : 1 << (32 - __lzcnt(length-1));
+  int nextP2 = length == 1 ? 1 : 1 << (32 - __builtin_clz(length-1));
   long * cudaArr;
   long * cudaRes;
-  long * res;
   cudaMalloc(&cudaArr, length*ROW2*sizeof(long));
   cudaMalloc(&cudaRes, length*ROW2*sizeof(long));
-  cudaMallocManaged(&res, length*ROW2*sizeof(long));
-  cudaMemcpy(cudaArr, arr,  length*sizeof(long), cudaMemcpyHostToDevice);
+  cudaMemcpy(cudaArr, arr,  length*sizeof(long), cudaMemcpyDeviceToDevice);
   int i = -1;
 
   for(int n = nextP2*2; n>1; n=n>>1){
@@ -315,10 +313,8 @@ long* countNodesRepitition(int length, int numBlock, long* arr)
     cudaMemcpy(cudaArr, cudaRes,  length*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);    
     i+=1;
   }
-  cudaMemcpy(res, cudaRes,  length*ROW2*sizeof(long), cudaMemcpyDeviceToHost);
   cudaFree(cudaArr);
-  cudaFree(cudaRes);
-  return (res + length);
+  return (cudaRes);
 }
 
  __global__
@@ -358,25 +354,32 @@ void checkCurrectenss(int length, char* string, long* arr, long* res)
 bool isCorrect(int strLength, long* input, char* string)
 {
   clock_t start, end, allStart, allEnd;
+  char* h_char_test;
+  long* h_long_test;
   allStart = clock();
-  int arrLength = input[strLength-1] + 1;
+  int arrLength;
+  cudaMemcpy(&arrLength, input + strLength - 1, sizeof(long), cudaMemcpyDeviceToHost);
+  arrLength++;
   int numBlock = ((arrLength) + BLOCKSIZE - 1) / BLOCKSIZE;
   char* res;
 
   start = clock();
-  cudaMallocManaged(&res, arrLength*sizeof(char));
+  cudaMalloc(&res, arrLength*sizeof(char));
   extract<<<numBlock, BLOCKSIZE>>>(strLength, arrLength, string, input, res);
   cudaDeviceSynchronize();
   end = clock();
   correct1 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //std::cout << "-------------Curretness First Step--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //printString(res, arrLength, ROW1);
-  //std::cout << "-------------End First Step--------------" << std::endl;
+  // std::cout << "-------------Curretness First Step--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_char_test = (char*) malloc(sizeof(char)*arrLength);
+  // cudaMemcpy(h_char_test, res, sizeof(char)*arrLength, cudaMemcpyDeviceToHost);
+  // printString(h_char_test, arrLength, ROW1);
+  // free(h_char_test);
+  // std::cout << "-------------End First Step--------------" << std::endl;
 
   long* arr;
   start = clock();
-  cudaMallocManaged(&arr, arrLength*sizeof(long));
+  cudaMalloc(&arr, arrLength*sizeof(long));
   initialize<<<numBlock, BLOCKSIZE>>>(1, arrLength, res, arr);
   cudaDeviceSynchronize();
   //gpuErrchk( cudaPeekAtLastError() );
@@ -385,38 +388,52 @@ bool isCorrect(int strLength, long* input, char* string)
   thrust::inclusive_scan(thrust::cuda::par, arr, arr + arrLength, arr);
   end = clock();
   correct2 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //std::cout << "-------------Curretness Second Step--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //print(arr, arrLength, ROW1);
-  //std::cout << "-------------End Second Step--------------" << std::endl;
+  // std::cout << "-------------Curretness Second Step--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (long*) malloc(sizeof(long)*arrLength);
+  // cudaMemcpy(h_long_test, arr, sizeof(long)*arrLength, cudaMemcpyDeviceToHost);
+  // print(h_long_test, arrLength, ROW1);
+  // free(h_long_test);
+  // std::cout << "-------------End Second Step--------------" << std::endl;
 
   start = clock();
   longRes = countNodesRepitition(arrLength, numBlock, arr);
   end = clock();
   correct3 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //std::cout << "-------------Curretness Third Step--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //print(longRes, arrLength, ROW1);
-  //std::cout << "-------------End Third Step--------------" << std::endl;
+  // std::cout << "-------------Curretness Third Step--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (long *)malloc(sizeof(long)*arrLength);
+  // cudaMemcpy(h_long_test, longRes, sizeof(long)*arrLength, cudaMemcpyDeviceToHost); 
+  // print(h_long_test, arrLength, ROW1);
+  // free(h_long_test);
+  // std::cout << "-------------End Third Step--------------" << std::endl;
 
   start = clock();
-  checkCurrectenss<<<numBlock, BLOCKSIZE>>>(arrLength, res, longRes, arr);
+  checkCurrectenss<<<numBlock, BLOCKSIZE>>>(arrLength, res, (longRes+arrLength), arr);
   cudaDeviceSynchronize();
   thrust::inclusive_scan(thrust::cuda::par, arr, arr + arrLength, arr);
   end = clock();
   correct4 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //std::cout << "-------------Curretness Fourth Step--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //print(arr, arrLength, ROW1);
-  //std::cout << "-------------End Fourth Step--------------" << std::endl;
+  // std::cout << "-------------Curretness Fourth Step--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (long *)malloc(sizeof(long)*arrLength);
+  // cudaMemcpy(h_long_test, arr, sizeof(long)*arrLength, cudaMemcpyDeviceToHost); 
+  // print(h_long_test, arrLength, ROW1);
+  // free(h_long_test);
+  // std::cout << "-------------End Fourth Step--------------" << std::endl;
 
   allEnd = clock();
-  //std::cout << "-------------isCorrect--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(allEnd-allStart)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //printf("%d\n", arr[arrLength - 1] == arrLength);
-  //std::cout << "-------------End isCorrect--------------" << std::endl;
+
   cudaFree(res);
-  return arr[arrLength - 1] == arrLength;
+  cudaFree(longRes);
+  long isCorrect;
+  cudaMemcpy(&isCorrect, arr+arrLength-1, sizeof(long), cudaMemcpyDeviceToHost);
+  cudaFree(arr);
+  // std::cout << "-------------isCorrect--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(allEnd-allStart)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // printf("%d\n", isCorrect == arrLength);
+  // std::cout << "-------------End isCorrect--------------" << std::endl;
+  return isCorrect == arrLength;
 }
 //INPUT Currectness Check END
 
@@ -445,11 +462,10 @@ long * sortByDepth(int length, int numBlock, long * arr)
 {
   long * res;
   long* tmp;
-  cudaMallocManaged(&res, length*ROW2*sizeof(long));
-  cudaMallocManaged(&tmp, length*ROW1*sizeof(long));
-  cudaMemcpy(res, arr,  length*ROW2*sizeof(long), cudaMemcpyHostToHost);
+  cudaMalloc(&res, length*ROW2*sizeof(long));
+  cudaMemcpy(res, arr,  length*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
   tmp = sort(length, numBlock, arr);
-  cudaMemcpy((res+length), tmp,  length*ROW1*sizeof(long), cudaMemcpyHostToHost);  
+  cudaMemcpy((res+length), tmp, length*ROW1*sizeof(long), cudaMemcpyDeviceToDevice);
   cudaFree(tmp);
   return res;
 }
@@ -503,12 +519,12 @@ void propagateParentsAndCountChildrenStep(int length, long* arr, int i, long* re
 
 long* propagateParentsAndCountChildren(int length, int numBlock, long* arr)
 {
-  int nextP2 = length == 1 ? 1 : 1 << (32 - __lzcnt(length-1));
+  int nextP2 = length == 1 ? 1 : 1 << (32 - __builtin_clz(length-1));
   long * cudaArr;
   long * res;
-  cudaMallocManaged(&cudaArr, length*ROW2*sizeof(long));
-  cudaMallocManaged(&res, length*ROW2*sizeof(long));
-  cudaMemcpy(cudaArr, arr,  length*sizeof(long), cudaMemcpyHostToDevice);
+  cudaMalloc(&cudaArr, length*ROW2*sizeof(long));
+  cudaMalloc(&res, length*ROW2*sizeof(long));
+  cudaMemcpy(cudaArr, arr,  length*sizeof(long), cudaMemcpyDeviceToDevice);
   int i = -1;
   for(int n = nextP2*2; n>1; n=n>>1){
     propagateParentsAndCountChildrenStep<<<numBlock, BLOCKSIZE>>>(length, cudaArr, i, res);
@@ -540,23 +556,22 @@ void addOne(int length, long* arr)
 {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
+  if(index==0) arr[length*ROW3] = 0;
   for(long i=index; i<length; i+=stride){
     arr[length*ROW3 + i] = arr[length*ROW3 + i] + 1;
   }
+  if(index==0) arr[length*ROW3] = 0;
 }
 
 long * allocate(int length, int numBlock, long* arr)
 {
   long * cudaArr;
-  cudaMallocManaged(&cudaArr, length*ROW4*sizeof(long));
-  cudaMemcpy(cudaArr, arr,  length*ROW3*sizeof(long), cudaMemcpyHostToDevice);
-  cudaMemcpy(cudaArr+length*ROW3+1, arr+length*ROW2,  (length*ROW1-1)*sizeof(long), cudaMemcpyHostToDevice);
-  cudaArr[length*ROW3] = 0;
+  cudaMalloc(&cudaArr, length*ROW4*sizeof(long));
+  cudaMemcpy(cudaArr, arr,  length*ROW3*sizeof(long), cudaMemcpyDeviceToDevice);
+  cudaMemcpy(cudaArr+length*ROW3+1, arr+length*ROW2,  (length*ROW1-1)*sizeof(long), cudaMemcpyDeviceToDevice);
   addOne<<<numBlock, BLOCKSIZE>>>(length, cudaArr);
   cudaDeviceSynchronize();
-  cudaArr[length*ROW3] = 0;
   thrust::inclusive_scan(thrust::cuda::par, cudaArr+ROW3*length, cudaArr + ROW4*length, cudaArr+ROW3*length);
-  cudaArr[length*ROW3] = 0;
   return cudaArr;
 }
 
@@ -564,8 +579,8 @@ long * scan(int length, long* arr)
 {
   long * cudaArr;
   long * res;
-  cudaMallocManaged(&cudaArr, length*ROW4*sizeof(long));
-  cudaMallocManaged(&res, length*ROW1*sizeof(long));
+  cudaMalloc(&cudaArr, length*ROW4*sizeof(long));
+  cudaMalloc(&res, length*ROW1*sizeof(long));
   cudaMemcpy(cudaArr, arr,  length*ROW4*sizeof(long), cudaMemcpyHostToDevice); 
   thrust::inclusive_scan(thrust::cuda::par, cudaArr+ROW2*length, cudaArr + ROW3*length, res);
   cudaFree(cudaArr);
@@ -593,53 +608,76 @@ double NewRuntime_Parallel_GPU(char* input, int length) {
   long* arr;
   char* attacheArr;
   clock_t start, end, allStart, allEnd;
+  char* h_char_test;
+  long* h_long_test;
   allStart = clock();
 
   start = clock();
-  cudaMallocManaged(&attacheArr, attachedLength*sizeof(char));
-  cudaMemcpy(attacheArr, input, length*sizeof(char), cudaMemcpyHostToDevice);
-  attacheArr[length] = ',';
-  char* sameDepthArr;
-  cudaMallocManaged(&sameDepthArr, attachedLength*sizeof(char));
-  cudaMemcpy(sameDepthArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
 
-  changeDepth<<<numBlock, BLOCKSIZE>>>(attachedLength, attacheArr, sameDepthArr);
+  attacheArr = (char*) malloc(sizeof(char)*attachedLength);
+  memcpy(attacheArr, input, length*sizeof(char));
+  attacheArr[length] = ',';
+  char* d_attacheArr;
+  cudaMalloc(&d_attacheArr, attachedLength*sizeof(char));
+  cudaMemcpy(d_attacheArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
+  
+  //cudaMallocManaged(&attacheArr, attachedLength*sizeof(char));
+  //cudaMemcpy(attacheArr, input, length*sizeof(char), cudaMemcpyHostToDevice);
+  //attacheArr[length] = ',';
+  char* d_sameDepthArr;
+  cudaMalloc(&d_sameDepthArr, attachedLength*sizeof(char));
+  cudaMemcpy(d_sameDepthArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
+
+  changeDepth<<<numBlock, BLOCKSIZE>>>(attachedLength, d_attacheArr, d_sameDepthArr);
   cudaDeviceSynchronize();
-  cudaFree(attacheArr);
+  free(attacheArr);
+  cudaFree(d_attacheArr);
   end = clock();
   step1 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //std::cout << "-------------First Step--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //printString(sameDepthArr, attachedLength, ROW1);
-  //std::cout << "-------------End First Step--------------" << std::endl;
+  // std::cout << "-------------First Step--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_char_test = (char*)malloc(sizeof(char)*attachedLength);
+  // cudaMemcpy(h_char_test, d_sameDepthArr, sizeof(char)*attachedLength, cudaMemcpyDeviceToHost);
+  // printString(h_char_test, attachedLength, ROW1);
+  // free(h_char_test);
+  // std::cout << "-------------End First Step--------------" << std::endl;
 
   start = clock();
-  fakeRes = findDepthAndCount(attachedLength, numBlock, sameDepthArr);
+  long *d_arr;
+  long correctDepth;
+  correctDepth = findDepthAndCount(attachedLength, numBlock, &d_arr, d_sameDepthArr);
   end = clock();
   step2 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //std::cout << "-------------Second Step--------------" << std::endl;
-  //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  //print(fakeRes, attachedLength, ROW3);
-  //std::cout << "-------------End Second Step--------------" << std::endl;
-  int arrLength = *(fakeRes+attachedLength-1);
-  if(*fakeRes != -1){
+  // std::cout << "-------------Second Step--------------" << std::endl;
+  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (long*)malloc(sizeof(long)*attachedLength*ROW3);
+  // cudaMemcpy(h_long_test, d_arr, sizeof(long)*attachedLength*ROW3, cudaMemcpyDeviceToHost);
+  // print(h_long_test, attachedLength, ROW3);
+  // free(h_long_test);
+  // std::cout << "-------------End Second Step--------------" << std::endl;
+  long arrLength;
+  cudaMemcpy(&arrLength, d_arr+(attachedLength-1), sizeof(long), cudaMemcpyDeviceToHost);
+  if(correctDepth != -1){
     bool correct;
-    correct = isCorrect(attachedLength, fakeRes+(attachedLength)*ROW2, sameDepthArr);
-    if(correct){
+    correct = isCorrect(attachedLength, d_arr+(attachedLength)*ROW2, d_sameDepthArr);
+    if(correct){      
       start = clock();
-      cudaMallocManaged(&arr, attachedLength*ROW4*sizeof(long));
-      cudaMallocManaged(&res, arrLength*ROW4*sizeof(long));
-      cudaMemcpy(arr, fakeRes,  attachedLength*ROW2*sizeof(long), cudaMemcpyHostToHost);
-      cudaFree(fakeRes);
-      reduce<<<numBlock, BLOCKSIZE>>>(attachedLength, arrLength, sameDepthArr, arr, res);
+      cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
+      cudaMalloc(&res, arrLength*ROW4*sizeof(long));
+      cudaMemcpy(arr, d_arr,  attachedLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
+      reduce<<<numBlock, BLOCKSIZE>>>(attachedLength, arrLength, d_sameDepthArr, arr, res);
       cudaDeviceSynchronize();
       end = clock();
       step3 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Third Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(res, arrLength, ROW2);
-      //std::cout << "-------------End Third Step--------------" << std::endl;
-      cudaFree(sameDepthArr);
+      // std::cout << "-------------Third Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW2);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW2);
+      // free(h_long_test);
+      // std::cout << "-------------End Third Step--------------" << std::endl;
+      cudaFree(d_sameDepthArr);
+      cudaFree(d_arr);
       int numBlock = (arrLength + BLOCKSIZE - 1) / BLOCKSIZE;
 
       start = clock();
@@ -647,93 +685,115 @@ double NewRuntime_Parallel_GPU(char* input, int length) {
       fakeRes = sortByDepth(arrLength, numBlock, arr);
       end = clock();
       step4 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Fourth Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(fakeRes, arrLength, ROW2);
-      //std::cout << "-------------End Fourth Step--------------" << std::endl;
+      // std::cout << "-------------Fourth Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long *)malloc(sizeof(long)*arrLength*ROW2);
+      // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW2);
+      // free(h_long_test);
+      // std::cout << "-------------End Fourth Step--------------" << std::endl;
 
       start = clock();
-      cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyHostToHost);
+      cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(fakeRes);
       cudaMemset(res, -1, arrLength*ROW1*sizeof(long));
       findParents<<<numBlock, BLOCKSIZE>>>( arrLength, arr, res);
       cudaDeviceSynchronize();
       end = clock();
       step5 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Fifth Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(res, arrLength, ROW1);
-      //std::cout << "-------------End Fifth Step--------------" << std::endl;
+      // std::cout << "-------------Fifth Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW1);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW1, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW1);
+      // free(h_long_test);
+      // std::cout << "-------------End Fifth Step--------------" << std::endl;
       
       start = clock();
-      cudaMemcpy(arr, res,  arrLength*ROW1*sizeof(long), cudaMemcpyHostToHost);
+      cudaMemcpy(arr, res,  arrLength*ROW1*sizeof(long), cudaMemcpyDeviceToDevice);
       fakeRes = propagateParentsAndCountChildren(arrLength, numBlock, arr);
       end = clock();
       step6 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Sixth Step--------------" << std::endl;      
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(fakeRes, arrLength, ROW2);
-      //std::cout << "-------------End Sixth Step--------------" << std::endl;
+      // std::cout << "-------------Sixth Step--------------" << std::endl;      
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*)malloc(sizeof(long)*arrLength*ROW2);
+      // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW2);
+      // free(h_long_test);
+      // std::cout << "-------------End Sixth Step--------------" << std::endl;
 
       start = clock();
-      cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyHostToHost);
+      cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(fakeRes);
       cudaMemset(res, -1, arrLength*ROW3*sizeof(long));
       childsNumber<<<numBlock, BLOCKSIZE>>>(arrLength, arr, res);
       cudaDeviceSynchronize();
       end = clock();
       step7 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Seventh Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(res, arrLength, ROW3);
-      //std::cout << "-------------End Seventh Step--------------" << std::endl;
+      // std::cout << "-------------Seventh Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW3);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW3, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW3);
+      // free(h_long_test);
+      // std::cout << "-------------End Seventh Step--------------" << std::endl;
       
       start = clock();
-      cudaMemcpy(arr, res,  arrLength*ROW3*sizeof(long), cudaMemcpyHostToHost);
+      cudaMemcpy(arr, res,  arrLength*ROW3*sizeof(long), cudaMemcpyDeviceToDevice);
       fakeRes = allocate(arrLength, numBlock, arr);
       end = clock();
       step8 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Eighth Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(fakeRes, arrLength, ROW4);
-      //std::cout << "-------------End Eighth Step--------------" << std::endl;
+      // std::cout << "-------------Eighth Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW4);
+      // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW4, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW4);
+      // free(h_long_test);
+      // std::cout << "-------------End Eighth Step--------------" << std::endl;
 
       long* sumRes;
-      cudaMallocManaged(&sumRes, arrLength*ROW1*sizeof(long));
+      cudaMalloc(&sumRes, arrLength*ROW1*sizeof(long));
       start = clock();
       sumRes = scan(arrLength, fakeRes);
       end = clock();
       scanStep += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Scan Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(sumRes, arrLength, ROW1);
-      //std::cout << "-------------End Scan Step--------------" << std::endl;
-      long resLength = sumRes[arrLength - 1];
+      // std::cout << "-------------Scan Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW1);
+      // cudaMemcpy(h_long_test, sumRes, sizeof(long)*arrLength*ROW1, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW1);
+      // free(h_long_test);
+      // std::cout << "-------------End Scan Step--------------" << std::endl;
+      long resLength;
+      cudaMemcpy(&resLength, sumRes + arrLength - 1, sizeof(long), cudaMemcpyDeviceToHost);
       start = clock();
       cudaMemcpy(arr, fakeRes,  arrLength*ROW4*sizeof(long), cudaMemcpyHostToHost);
       cudaFree(sumRes);
       cudaFree(fakeRes);
       cudaFree(res);
-      cudaMallocManaged(&res, (arrLength+resLength)*sizeof(long));
+      cudaMalloc(&res, (arrLength+resLength)*sizeof(long));
       cudaMemset(res, 0, (arrLength+resLength)*sizeof(long));
       generateRes<<<numBlock, BLOCKSIZE>>>(arrLength,  arr, res);
       cudaDeviceSynchronize();
       end = clock();
       lastStep += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      //std::cout << "-------------Last Step--------------" << std::endl;
-      //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      //print(res, (arrLength+resLength), ROW1);
-      //std::cout << "-------------End Last Step--------------" << std::endl;
+      // std::cout << "-------------Last Step--------------" << std::endl;
+      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*(arrLength+resLength)*ROW1);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*(arrLength+resLength)*ROW1, cudaMemcpyDeviceToHost);
+      // print(h_long_test, (arrLength+resLength), ROW1);
+      // free(h_long_test);
+      // std::cout << "-------------End Last Step--------------" << std::endl;
       cudaFree(arr);
       cudaFree(res);
       allEnd = clock();
       cudaProfilerStop();    
       //*******************************//
-      //size_t l_free = 0;
-      //size_t l_Total = 0;
-      //cudaError_t error_id = cudaMemGetInfo(&l_free, &l_Total);
-      //size_t allocated = (l_Total - l_free);
-      //std::cout << "Total: " << l_Total << " Free: " << l_free << " Allocated: " << allocated << std::endl;
+      // size_t l_free = 0;
+      // size_t l_Total = 0;
+      // cudaError_t error_id = cudaMemGetInfo(&l_free, &l_Total);
+      // size_t allocated = (l_Total - l_free);
+      // std::cout << "Total: " << l_Total << " Free: " << l_free << " Allocated: " << allocated << std::endl;
       //*******************************//
       //program += ((double)(allEnd-allStart)/CLOCKS_PER_SEC)*1000;
       //printf("program: %f\n", program);
