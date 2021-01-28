@@ -935,16 +935,15 @@ double singleMode(){
   }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-  int type;
-  std::cout << "Please enter mode(single: 0, batch: 1): ";
-  std::cin >> type;
   double result;
-  if(type){
+  if (argv[1] != NULL && strcmp(argv[1], "-b") == 0){
+    std::cout << "Batch mode..." << std::endl;
     result = runMultipleTimes(batchMode);
   }
   else{
+    std::cout << "Single mode..." << std::endl;
     result = runMultipleTimes(singleMode);
   }
   return 0;
