@@ -12,7 +12,6 @@
 #include <thrust/copy.h>
 #include <thrust/scan.h>
 #include <string.h>
-#include <pthread.h>
 
 const char * FILENAMES[]={"./inputs/Long_8.txt", "./inputs/Long_16.txt", "./inputs/Long_32.txt", "./inputs/Long_64.txt"};
 
@@ -34,7 +33,7 @@ double  step1=0,
         correct4=0,
         program=0;
 
-#define RUNTIMES 1
+#define RUNTIMES 50
 
 #define BLOCKSIZE 256
 #define FILESCOUNT 4
@@ -53,15 +52,6 @@ double  step1=0,
 #define ROW4 4
 #define ROW5 5
 #define ROW6 6
-
-struct pthread_input {
-  int textLength;
-  int outputSize;
-  cudaStream_t stream;
-  char* text;
-  long* output;
-};
-
 
 bool isCorrect(int strLength, long* input, char* string);
 
@@ -95,11 +85,11 @@ int printString(char* input, int length, int rows){
   return 1;  
 }
 
-double runMultipleTimes(double(*func)(char *), char * input){
+double runMultipleTimes(double(*func)()){
   double runtime = 0.0;
 
   for(int i=0; i<RUNTIMES; i++){
-    runtime += func(input);
+    runtime += func();
   }
   runtime = runtime/RUNTIMES;
   step1= step1/RUNTIMES;
@@ -162,17 +152,17 @@ void inv(long length, long * arr, long * res){
   }
 }
 
-long *sort(int length, int numBlock, long * arr, cudaStream_t stream)
+long *sort(int length, int numBlock, long * arr)
 {
   long* cudaArr;
   cudaMalloc(&cudaArr, length*ROW2*sizeof(long));
   cudaMemcpy(cudaArr, arr, length*ROW2*sizeof(long), cudaMemcpyHostToDevice);
   thrust::device_ptr<long> devArr(cudaArr);
-  thrust::stable_sort_by_key(thrust::cuda::par.on(stream), cudaArr, cudaArr+length, cudaArr+length);
+  thrust::stable_sort_by_key(thrust::cuda::par, cudaArr, cudaArr+length, cudaArr+length);
   long *res;
   cudaMalloc(&res, length*ROW1*sizeof(long));
-  inv<<<numBlock, BLOCKSIZE, 0, stream>>>(length, cudaArr, res);
-  cudaStreamSynchronize(stream);
+  inv<<<numBlock, BLOCKSIZE>>>(length, cudaArr, res);
+  cudaDeviceSynchronize();
   cudaFree(cudaArr);
   return res;
 }
@@ -243,15 +233,15 @@ void changeDepth(int length, char* strArr, char* res)
   }
 }
 
-long findDepthAndCount(int length, int numBlock, long** arr, char * string, cudaStream_t stream)
+long findDepthAndCount(int length, int numBlock, long** arr, char * string)
 {
   cudaMalloc(arr, length*ROW3*sizeof(long));
-  initialize<<<numBlock, BLOCKSIZE, 0, stream>>>(0, length, string, *arr);
-  cudaStreamSynchronize(stream);
+  initialize<<<numBlock, BLOCKSIZE>>>(0, length, string, *arr);
+  cudaDeviceSynchronize();
   //gpuErrchk( cudaPeekAtLastError() );
-  thrust::inclusive_scan(thrust::cuda::par.on(stream), (*arr), (*arr) + length, (*arr));
-  thrust::inclusive_scan(thrust::cuda::par.on(stream), (*arr) + length, (*arr) + ROW2*length, (*arr) + length);
-  thrust::exclusive_scan(thrust::cuda::par.on(stream), (*arr) + ROW2*length, (*arr) + ROW3*length, (*arr) + ROW2*length);
+  thrust::inclusive_scan(thrust::cuda::par, (*arr), (*arr) + length, (*arr));
+  thrust::inclusive_scan(thrust::cuda::par, (*arr) + length, (*arr) + ROW2*length, (*arr) + length);
+  thrust::exclusive_scan(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*arr) + ROW2*length);
   long res;
   cudaMemcpy(&res, (*arr)+(ROW2*length)-1, sizeof(long), cudaMemcpyDeviceToHost);
   if(res == 0){
@@ -307,7 +297,7 @@ void countNodesRepititionStep(int length, long* arr, int i, long* res){
   }  
 }
 
-long* countNodesRepitition(int length, int numBlock, long* arr, cudaStream_t stream)
+long* countNodesRepitition(int length, int numBlock, long* arr)
 {
   int nextP2 = length == 1 ? 1 : 1 << (32 - __builtin_clz(length-1));
   long * cudaArr;
@@ -319,7 +309,7 @@ long* countNodesRepitition(int length, int numBlock, long* arr, cudaStream_t str
 
   for(int n = nextP2*2; n>1; n=n>>1){
     countNodesRepititionStep<<<numBlock, BLOCKSIZE>>>(length, cudaArr, i, cudaRes);
-    cudaStreamSynchronize(stream);
+    cudaDeviceSynchronize();
     cudaMemcpy(cudaArr, cudaRes,  length*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);    
     i+=1;
   }
@@ -361,7 +351,7 @@ void checkCurrectenss(int length, char* string, long* arr, long* res)
   }
 }
 
-bool isCorrect(int strLength, long* input, char* string, cudaStream_t stream)
+bool isCorrect(int strLength, long* input, char* string)
 {
   clock_t start, end, allStart, allEnd;
   char* h_char_test;
@@ -375,8 +365,8 @@ bool isCorrect(int strLength, long* input, char* string, cudaStream_t stream)
 
   start = clock();
   cudaMalloc(&res, arrLength*sizeof(char));
-  extract<<<numBlock, BLOCKSIZE, 0, stream>>>(strLength, arrLength, string, input, res);
-  cudaStreamSynchronize(stream);
+  extract<<<numBlock, BLOCKSIZE>>>(strLength, arrLength, string, input, res);
+  cudaDeviceSynchronize();
   end = clock();
   correct1 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
   // std::cout << "-------------Curretness First Step--------------" << std::endl;
@@ -390,12 +380,12 @@ bool isCorrect(int strLength, long* input, char* string, cudaStream_t stream)
   long* arr;
   start = clock();
   cudaMalloc(&arr, arrLength*sizeof(long));
-  initialize<<<numBlock, BLOCKSIZE, 0, stream>>>(1, arrLength, res, arr);
-  cudaStreamSynchronize(stream);
+  initialize<<<numBlock, BLOCKSIZE>>>(1, arrLength, res, arr);
+  cudaDeviceSynchronize();
   //gpuErrchk( cudaPeekAtLastError() );
 
   long* longRes;
-  thrust::inclusive_scan(thrust::cuda::par.on(stream), arr, arr + arrLength, arr);
+  thrust::inclusive_scan(thrust::cuda::par, arr, arr + arrLength, arr);
   end = clock();
   correct2 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
   // std::cout << "-------------Curretness Second Step--------------" << std::endl;
@@ -407,7 +397,7 @@ bool isCorrect(int strLength, long* input, char* string, cudaStream_t stream)
   // std::cout << "-------------End Second Step--------------" << std::endl;
 
   start = clock();
-  longRes = countNodesRepitition(arrLength, numBlock, arr, stream);
+  longRes = countNodesRepitition(arrLength, numBlock, arr);
   end = clock();
   correct3 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
   // std::cout << "-------------Curretness Third Step--------------" << std::endl;
@@ -419,9 +409,9 @@ bool isCorrect(int strLength, long* input, char* string, cudaStream_t stream)
   // std::cout << "-------------End Third Step--------------" << std::endl;
 
   start = clock();
-  checkCurrectenss<<<numBlock, BLOCKSIZE, 0, stream>>>(arrLength, res, (longRes+arrLength), arr);
-  cudaStreamSynchronize(stream);
-  thrust::inclusive_scan(thrust::cuda::par.on(stream), arr, arr + arrLength, arr);
+  checkCurrectenss<<<numBlock, BLOCKSIZE>>>(arrLength, res, (longRes+arrLength), arr);
+  cudaDeviceSynchronize();
+  thrust::inclusive_scan(thrust::cuda::par, arr, arr + arrLength, arr);
   end = clock();
   correct4 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
   // std::cout << "-------------Curretness Fourth Step--------------" << std::endl;
@@ -468,13 +458,13 @@ void reduce(int length, int arrLength, char * string, long * arr, long * res)
   }
 }
 
-long * sortByDepth(int length, int numBlock, long * arr, cudaStream_t stream)
+long * sortByDepth(int length, int numBlock, long * arr)
 {
   long * res;
   long* tmp;
   cudaMalloc(&res, length*ROW2*sizeof(long));
   cudaMemcpy(res, arr,  length*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
-  tmp = sort(length, numBlock, arr, stream);
+  tmp = sort(length, numBlock, arr);
   cudaMemcpy((res+length), tmp, length*ROW1*sizeof(long), cudaMemcpyDeviceToDevice);
   cudaFree(tmp);
   return res;
@@ -527,7 +517,7 @@ void propagateParentsAndCountChildrenStep(int length, long* arr, int i, long* re
   }  
 }
 
-long* propagateParentsAndCountChildren(int length, int numBlock, long* arr, cudaStream_t stream)
+long* propagateParentsAndCountChildren(int length, int numBlock, long* arr)
 {
   int nextP2 = length == 1 ? 1 : 1 << (32 - __builtin_clz(length-1));
   long * cudaArr;
@@ -537,8 +527,8 @@ long* propagateParentsAndCountChildren(int length, int numBlock, long* arr, cuda
   cudaMemcpy(cudaArr, arr,  length*sizeof(long), cudaMemcpyDeviceToDevice);
   int i = -1;
   for(int n = nextP2*2; n>1; n=n>>1){
-    propagateParentsAndCountChildrenStep<<<numBlock, BLOCKSIZE, 0, stream>>>(length, cudaArr, i, res);
-    cudaStreamSynchronize(stream);
+    propagateParentsAndCountChildrenStep<<<numBlock, BLOCKSIZE>>>(length, cudaArr, i, res);
+    cudaDeviceSynchronize();
     cudaMemcpy(cudaArr, res,  length*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);    
     i+=1;
   }
@@ -573,26 +563,26 @@ void addOne(int length, long* arr)
   if(index==0) arr[length*ROW3] = 0;
 }
 
-long * allocate(int length, int numBlock, long* arr, cudaStream_t stream)
+long * allocate(int length, int numBlock, long* arr)
 {
   long * cudaArr;
   cudaMalloc(&cudaArr, length*ROW4*sizeof(long));
   cudaMemcpy(cudaArr, arr,  length*ROW3*sizeof(long), cudaMemcpyDeviceToDevice);
   cudaMemcpy(cudaArr+length*ROW3+1, arr+length*ROW2,  (length*ROW1-1)*sizeof(long), cudaMemcpyDeviceToDevice);
-  addOne<<<numBlock, BLOCKSIZE, 0, stream>>>(length, cudaArr);
-  cudaStreamSynchronize(stream);
-  thrust::inclusive_scan(thrust::cuda::par.on(stream), cudaArr+ROW3*length, cudaArr + ROW4*length, cudaArr+ROW3*length);
+  addOne<<<numBlock, BLOCKSIZE>>>(length, cudaArr);
+  cudaDeviceSynchronize();
+  thrust::inclusive_scan(thrust::cuda::par, cudaArr+ROW3*length, cudaArr + ROW4*length, cudaArr+ROW3*length);
   return cudaArr;
 }
 
-long * scan(int length, long* arr, cudaStream_t stream)
+long * scan(int length, long* arr)
 {
   long * cudaArr;
   long * res;
   cudaMalloc(&cudaArr, length*ROW4*sizeof(long));
   cudaMalloc(&res, length*ROW1*sizeof(long));
   cudaMemcpy(cudaArr, arr,  length*ROW4*sizeof(long), cudaMemcpyHostToDevice); 
-  thrust::inclusive_scan(thrust::cuda::par.on(stream), cudaArr+ROW2*length, cudaArr + ROW3*length, res);
+  thrust::inclusive_scan(thrust::cuda::par, cudaArr+ROW2*length, cudaArr + ROW3*length, res);
   cudaFree(cudaArr);
   return res;  
 }
@@ -609,11 +599,9 @@ void generateRes(int length, long* arr, long* res)
 }
 
 
-void *NewRuntime_Parallel_GPU(void* inp) {
-  struct pthread_input* input = (struct pthread_input*) inp;
-  cudaStream_t stream = input->stream;
+double NewRuntime_Parallel_GPU(char* input, int length) {
   cudaProfilerStart();
-  int attachedLength = input->textLength;
+  int attachedLength = length + 1;
   int numBlock = (attachedLength + BLOCKSIZE - 1) / BLOCKSIZE;
   long* res;
   long* fakeRes;
@@ -627,8 +615,8 @@ void *NewRuntime_Parallel_GPU(void* inp) {
   start = clock();
 
   attacheArr = (char*) malloc(sizeof(char)*attachedLength);
-  memcpy(attacheArr, input->text, attachedLength*sizeof(char));
-  attacheArr[attachedLength-1] = ',';
+  memcpy(attacheArr, input, length*sizeof(char));
+  attacheArr[length] = ',';
   char* d_attacheArr;
   cudaMalloc(&d_attacheArr, attachedLength*sizeof(char));
   cudaMemcpy(d_attacheArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
@@ -640,8 +628,8 @@ void *NewRuntime_Parallel_GPU(void* inp) {
   cudaMalloc(&d_sameDepthArr, attachedLength*sizeof(char));
   cudaMemcpy(d_sameDepthArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
 
-  changeDepth<<<numBlock, BLOCKSIZE, 0, stream>>>(attachedLength, d_attacheArr, d_sameDepthArr);
-  cudaStreamSynchronize(stream);
+  changeDepth<<<numBlock, BLOCKSIZE>>>(attachedLength, d_attacheArr, d_sameDepthArr);
+  cudaDeviceSynchronize();
   free(attacheArr);
   cudaFree(d_attacheArr);
   end = clock();
@@ -657,7 +645,7 @@ void *NewRuntime_Parallel_GPU(void* inp) {
   start = clock();
   long *d_arr;
   long correctDepth;
-  correctDepth = findDepthAndCount(attachedLength, numBlock, &d_arr, d_sameDepthArr, stream);
+  correctDepth = findDepthAndCount(attachedLength, numBlock, &d_arr, d_sameDepthArr);
   end = clock();
   step2 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
   // std::cout << "-------------Second Step--------------" << std::endl;
@@ -671,14 +659,14 @@ void *NewRuntime_Parallel_GPU(void* inp) {
   cudaMemcpy(&arrLength, d_arr+(attachedLength-1), sizeof(long), cudaMemcpyDeviceToHost);
   if(correctDepth != -1){
     bool correct;
-    correct = isCorrect(attachedLength, d_arr+(attachedLength)*ROW2, d_sameDepthArr, stream);
+    correct = isCorrect(attachedLength, d_arr+(attachedLength)*ROW2, d_sameDepthArr);
     if(correct){      
       start = clock();
       cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
       cudaMalloc(&res, arrLength*ROW4*sizeof(long));
       cudaMemcpy(arr, d_arr,  attachedLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
-      reduce<<<numBlock, BLOCKSIZE, 0, stream>>>(attachedLength, arrLength, d_sameDepthArr, arr, res);
-      cudaStreamSynchronize(stream);
+      reduce<<<numBlock, BLOCKSIZE>>>(attachedLength, arrLength, d_sameDepthArr, arr, res);
+      cudaDeviceSynchronize();
       end = clock();
       step3 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Third Step--------------" << std::endl;
@@ -694,7 +682,7 @@ void *NewRuntime_Parallel_GPU(void* inp) {
 
       start = clock();
       cudaMemcpy(arr, res,  arrLength*ROW2*sizeof(long), cudaMemcpyHostToHost);
-      fakeRes = sortByDepth(arrLength, numBlock, arr, stream);
+      fakeRes = sortByDepth(arrLength, numBlock, arr);
       end = clock();
       step4 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Fourth Step--------------" << std::endl;
@@ -709,8 +697,8 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(fakeRes);
       cudaMemset(res, -1, arrLength*ROW1*sizeof(long));
-      findParents<<<numBlock, BLOCKSIZE, 0, stream>>>( arrLength, arr, res);
-      cudaStreamSynchronize(stream);
+      findParents<<<numBlock, BLOCKSIZE>>>( arrLength, arr, res);
+      cudaDeviceSynchronize();
       end = clock();
       step5 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Fifth Step--------------" << std::endl;
@@ -723,7 +711,7 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       
       start = clock();
       cudaMemcpy(arr, res,  arrLength*ROW1*sizeof(long), cudaMemcpyDeviceToDevice);
-      fakeRes = propagateParentsAndCountChildren(arrLength, numBlock, arr, stream);
+      fakeRes = propagateParentsAndCountChildren(arrLength, numBlock, arr);
       end = clock();
       step6 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Sixth Step--------------" << std::endl;      
@@ -738,8 +726,8 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(fakeRes);
       cudaMemset(res, -1, arrLength*ROW3*sizeof(long));
-      childsNumber<<<numBlock, BLOCKSIZE, 0, stream>>>(arrLength, arr, res);
-      cudaStreamSynchronize(stream);
+      childsNumber<<<numBlock, BLOCKSIZE>>>(arrLength, arr, res);
+      cudaDeviceSynchronize();
       end = clock();
       step7 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Seventh Step--------------" << std::endl;
@@ -752,7 +740,7 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       
       start = clock();
       cudaMemcpy(arr, res,  arrLength*ROW3*sizeof(long), cudaMemcpyDeviceToDevice);
-      fakeRes = allocate(arrLength, numBlock, arr, stream);
+      fakeRes = allocate(arrLength, numBlock, arr);
       end = clock();
       step8 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Eighth Step--------------" << std::endl;
@@ -766,7 +754,7 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       long* sumRes;
       cudaMalloc(&sumRes, arrLength*ROW1*sizeof(long));
       start = clock();
-      sumRes = scan(arrLength, fakeRes, stream);
+      sumRes = scan(arrLength, fakeRes);
       end = clock();
       scanStep += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Scan Step--------------" << std::endl;
@@ -785,12 +773,8 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       cudaFree(res);
       cudaMalloc(&res, (arrLength+resLength)*sizeof(long));
       cudaMemset(res, 0, (arrLength+resLength)*sizeof(long));
-      cudaStreamSynchronize(stream);
-      size_t free, total;
-      //cudaMemGetInfo 	(&free,&total);
-      //printf("free: %d, total: %d", (int)free, (int)total);
-      generateRes<<<numBlock, BLOCKSIZE, 0, stream>>>(arrLength,  arr, res);
-      cudaStreamSynchronize(stream);
+      generateRes<<<numBlock, BLOCKSIZE>>>(arrLength,  arr, res);
+      cudaDeviceSynchronize();
       end = clock();
       lastStep += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
       // std::cout << "-------------Last Step--------------" << std::endl;
@@ -800,10 +784,6 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       // print(h_long_test, (arrLength+resLength), ROW1);
       // free(h_long_test);
       // std::cout << "-------------End Last Step--------------" << std::endl;
-      input->outputSize = (arrLength+resLength);
-      input->output = (long *) malloc(sizeof(long)*(input->outputSize));
-      cudaMemcpy(input->output, res, sizeof(long)*(input->outputSize), cudaMemcpyDeviceToHost);
-
       cudaFree(arr);
       cudaFree(res);
       allEnd = clock();
@@ -817,7 +797,7 @@ void *NewRuntime_Parallel_GPU(void* inp) {
       //*******************************//
       //program += ((double)(allEnd-allStart)/CLOCKS_PER_SEC)*1000;
       //printf("program: %f\n", program);
-      return NULL;
+
     } 
     else{
       printf("Input wrong\n");
@@ -828,30 +808,24 @@ void *NewRuntime_Parallel_GPU(void* inp) {
     printf("Input invalid\n");
     return 0;
   }
-  return NULL;
+  return (double)(allEnd-allStart);
 }
 
-char **loadMultipleRecords(char* name, int * number){
-  FILE * newfile;
-  char * line= NULL;
-  size_t len = 0;
-  ssize_t read;
-  newfile = fopen(name, "r");
-  if(newfile == NULL) exit(EXIT_FAILURE);
-  int lineNum = 0;
-  while((read = getline(&line, &len, newfile))  != -1) lineNum++;
-  fclose(newfile);
-  char** texts = (char **)malloc(lineNum*sizeof(char *));
-  int i = 0;
-  newfile = fopen(name, "r");
-  if(newfile == NULL) exit(EXIT_FAILURE);
-  while((read = getline(&line, &len, newfile))  != -1){
-    *(texts+i) = (char*) malloc(sizeof(char)*read);
-    *(texts+i) =  strcpy(*(texts+i), line);
-    i++;
+char **loadMultipleFiles(int length, char** names, int * filesLength){
+  char** texts = (char **)malloc(length*sizeof(char *));
+  for(int i = 0; i< length; i++){
+    FILE * f = fopen(names[i], "r");
+    if(f){
+      fseek(f, 0, SEEK_END);
+      filesLength[i] = ftell(f);
+      fseek(f, 0, SEEK_SET);
+      texts[i] = (char *)malloc(sizeof(char) * filesLength[i]);
+      if(texts[i]) {
+          fread(texts[i], 1, filesLength[i], f);
+      }
+      fclose(f);
+    }
   }
-  *number = lineNum;
-  fclose(newfile);
   return texts;
 }
 
@@ -918,70 +892,40 @@ char* loadFile(int* fileLength){
   return 0;
 }
 
-double batchMode(char* filename)
+double batchMode()
 {
   char ** texts;
-  int numTexts;
-  clock_t allStart, allEnd;
-  texts = loadMultipleRecords(filename, &numTexts);
-  const int numThreads = numTexts > 16 ? 16 : numTexts;
+  char ** names = (char**) malloc(FILESCOUNT*sizeof(char *));
+  int * fileLength = (int *)malloc(FILESCOUNT*sizeof(int));
+  for(int i = 0; i< FILESCOUNT; i++){
+    names[i] = (char *)malloc(NAMELENGTH*sizeof(char));
+    strcpy(names[i], FILENAMES[i]);
+  }
+  texts = loadMultipleFiles(FILESCOUNT, names, fileLength);
   double GPUparallelTime = 0;
-  pthread_t threads[numThreads];
-  int recordsLength[numTexts];
-  struct pthread_input threadsInput[numTexts];
-  char * text;
-  //for(unsigned int i=0; i<numTexts; i++) {printString((char*)texts[i], strlen((char*)texts[i]), ROW1);}
-  unsigned int n=0;
-  while(n < numTexts){
-    for(unsigned int k=0; k<numThreads; k++){
-      int index = n+k;
-      if(index < numTexts){
-        text = (char*)texts[index];
-        recordsLength[index] = strlen(text);
-        cudaStreamCreate(&(threadsInput[index].stream));
-        threadsInput[index].text = (char*)malloc(sizeof(char)*recordsLength[index]);
-        memcpy(threadsInput[index].text, text, sizeof(char)*recordsLength[index]);
-        threadsInput[index].textLength = recordsLength[index];
-        free(text);
-        if(pthread_create(&threads[k], NULL, NewRuntime_Parallel_GPU, (void*)&threadsInput[index])){
-          printf("Error creating threads\n");
-          return 0;
-        }
-      }
+  //NewRuntime_Parallel_GPU(texts[0], fileLength[0]);
+  if(texts){
+    for(int i=0; i<FILESCOUNT; i++){
+      //std::cout <<  fileLength[i] << std::endl;
+      GPUparallelTime += NewRuntime_Parallel_GPU(texts[i], fileLength[i]);
+      //std::cout << "Parallel GPU time elapsed: " << std::setprecision (17) << (GPUparallelTime/CLOCKS_PER_SEC)*1000 << "ms." << std::endl;
     }
-    for (unsigned int i = 0; i < numThreads; i++) {
-      int index = n+i;
-      if(index<numTexts){
-        if(pthread_join(threads[i], NULL)) {
-            printf("Error joining threads\n");
-            return 2;
-        }
-        free(threadsInput[index].text);
-        cudaStreamDestroy(threadsInput[index].stream);
-      }
-    }
-    //cudaDeviceSynchronize();
-
-    n = n+numThreads;
+    return (GPUparallelTime/CLOCKS_PER_SEC)*1000;
   }
-  for(int i=0; i<numTexts; i++){
-    //print(threadsInput[i].output, threadsInput[i].outputSize, ROW1);
+  else{
+    printf("Cannot read file\n");
+    return -1;
   }
-
-
-  
-  return (GPUparallelTime/CLOCKS_PER_SEC)*1000;
-  
 }
 
-double singleMode(char* filename){
+double singleMode(){
   int length;
   char* input = loadFile(&length);
   if(input){
     //std::cout <<  length << std::endl;
     double GPUparallelTime = 0;
     //NewRuntime_Parallel_GPU(input, length);
-    //GPUparallelTime = NewRuntime_Parallel_GPU(input, length);
+    GPUparallelTime = NewRuntime_Parallel_GPU(input, length);
     //std::cout << "Parallel GPU time elapsed: " << std::setprecision (17) << (GPUparallelTime/CLOCKS_PER_SEC)*1000 << "ms." << std::endl;
     return (GPUparallelTime/CLOCKS_PER_SEC)*1000;
   }
@@ -994,19 +938,13 @@ double singleMode(char* filename){
 int main(int argc, char **argv)
 {
   double result;
-  if (argv[1] != NULL){
-    if( strcmp(argv[1], "-b") == 0 && argv[2] != NULL){
-      std::cout << "Batch mode..." << std::endl;
-      result = runMultipleTimes(batchMode, argv[2]);
-    }
-    if (strcmp(argv[1], "-s") == 0 && argv[2] != NULL){
-      std::cout << "Single mode..." << std::endl;
-      result = runMultipleTimes(singleMode, argv[2]);
-    }
-    else std::cout << "Command should be like '-b/-s [file path]/[file name]'" << std::endl;
+  if (argv[1] != NULL && strcmp(argv[1], "-b") == 0){
+    std::cout << "Batch mode..." << std::endl;
+    result = runMultipleTimes(batchMode);
   }
   else{
-    std::cout << "Please select (batch: -b, single -s): " << std::endl;
+    std::cout << "Single mode..." << std::endl;
+    result = runMultipleTimes(singleMode);
   }
   return 0;
 }
