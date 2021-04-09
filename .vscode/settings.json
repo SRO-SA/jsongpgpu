@@ -1,3 +1,13 @@
 {
-  "terminal.integrated.scrollback": 10000
+  "terminal.integrated.scrollback": 10000,
+  "files.associations": {
+    "string_view": "cpp",
+    "*.cuh": "cpp",
+    "*.tcc": "cpp",
+    "functional": "cpp",
+    "fstream": "cpp",
+    "istream": "cpp",
+    "ranges": "cpp",
+    "streambuf": "cpp"
+  }
 }

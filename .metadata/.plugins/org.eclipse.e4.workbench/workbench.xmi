@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="ASCII"?>
 <application:Application xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:advanced="http://www.eclipse.org/ui/2010/UIModel/application/ui/advanced" xmlns:application="http://www.eclipse.org/ui/2010/UIModel/application" xmlns:basic="http://www.eclipse.org/ui/2010/UIModel/application/ui/basic" xmlns:menu="http://www.eclipse.org/ui/2010/UIModel/application/ui/menu" xmi:id="_8h-qUfgTEeqojo11w8Drqg" elementId="org.eclipse.e4.legacy.ide.application" contributorURI="platform:/plugin/org.eclipse.ui.workbench" selectedElement="_8h-qUvgTEeqojo11w8Drqg" bindingContexts="_8h-qWPgTEeqojo11w8Drqg">
-  <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;workbench>&#xD;&#xA;&lt;mruList/>&#xD;&#xA;&lt;/workbench>"/>
+  <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;workbench>&#xA;&lt;mruList/>&#xA;&lt;/workbench>"/>
   <tags>activeSchemeId:com.nvidia.viper.acceleratorConfiguration</tags>
   <tags>ModelMigrationProcessor.001</tags>
   <children xsi:type="basic:TrimmedWindow" xmi:id="_8h-qUvgTEeqojo11w8Drqg" elementId="IDEWindow" contributorURI="platform:/plugin/org.eclipse.ui.workbench" selectedElement="_8pH0I_gTEeqojo11w8Drqg" label="%trimmedwindow.label.eclipseSDK" x="473" y="106" width="1200" height="800">
     <persistedState key="coolBarVisible" value="true"/>
-    <persistedState key="perspectiveBarVisible" value="true"/>
+    <persistedState key="perspectiveBarVisible" value="false"/>
+    <persistedState key="workingSets" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;workingSets/>"/>
+    <persistedState key="aggregateWorkingSetId"/>
     <tags>topLevel</tags>
     <tags>shellMaximized</tags>
-    <children xsi:type="basic:PartSashContainer" xmi:id="_8pH0I_gTEeqojo11w8Drqg" selectedElement="_8pH0JPgTEeqojo11w8Drqg" horizontal="true">
+    <children xsi:type="basic:PartSashContainer" xmi:id="_8pH0I_gTEeqojo11w8Drqg" selectedElement="_8pH0JfgTEeqojo11w8Drqg" horizontal="true">
       <children xsi:type="advanced:PerspectiveStack" xmi:id="_8pH0JPgTEeqojo11w8Drqg" elementId="org.eclipse.ui.ide.perspectivestack" containerData="7500" selectedElement="_8rRwQPgTEeqojo11w8Drqg">
         <children xsi:type="advanced:Perspective" xmi:id="_8rRwQPgTEeqojo11w8Drqg" elementId="com.nvidia.viper.perspective" selectedElement="_8rSXUPgTEeqojo11w8Drqg" label="Profile" iconURI="platform:/plugin/com.nvidia.viper/icons/en/perspective.gif">
           <persistedState key="persp.hiddenItems" value="persp.hideToolbarSC:org.eclipse.debug.ui.commands.RunToLine,persp.hideToolbarSC:org.eclipse.ui.edit.text.toggleShowSelectedElementOnly,persp.actionSet:org.eclipse.search.searchActionSet,persp.actionSet:org.eclipse.ui.externaltools.ExternalToolsSet,persp.actionSet:org.eclipse.ui.edit.text.actionSet.openExternalFile,persp.actionSet:org.eclipse.ui.edit.text.actionSet.presentation,persp.actionSet:org.eclipse.ui.edit.text.actionSet.annotationNavigation,persp.actionSet:org.eclipse.ui.edit.text.actionSet.navigation,persp.actionSet:org.eclipse.ui.edit.text.actionSet.convertLineDelimitersTo,persp.actionSet:org.eclipse.rse.core.search.searchActionSet,persp.actionSet:org.eclipse.ui.console,persp.actionSet:org.eclipse.update.ui.softwareUpdates,"/>
@@ -21,12 +23,10 @@
           <tags>persp.viewSC:com.nvidia.viper.openaccview</tags>
           <tags>persp.viewSC:com.nvidia.viper.openmpview</tags>
           <children xsi:type="basic:PartSashContainer" xmi:id="_8rSXUPgTEeqojo11w8Drqg" selectedElement="_8rSXUvgTEeqojo11w8Drqg">
-            <children xsi:type="advanced:Placeholder" xmi:id="_8rSXUfgTEeqojo11w8Drqg" elementId="org.eclipse.ui.editorss" containerData="6000" ref="_8rImUPgTEeqojo11w8Drqg"/>
-            <children xsi:type="basic:PartSashContainer" xmi:id="_8rSXUvgTEeqojo11w8Drqg" containerData="4000" selectedElement="_8rSXU_gTEeqojo11w8Drqg" horizontal="true">
+            <children xsi:type="advanced:Placeholder" xmi:id="_8rSXUfgTEeqojo11w8Drqg" elementId="org.eclipse.ui.editorss" containerData="5985" ref="_8rImUPgTEeqojo11w8Drqg"/>
+            <children xsi:type="basic:PartSashContainer" xmi:id="_8rSXUvgTEeqojo11w8Drqg" containerData="4015" selectedElement="_8rSXW_gTEeqojo11w8Drqg" horizontal="true">
               <children xsi:type="basic:PartStack" xmi:id="_8rSXU_gTEeqojo11w8Drqg" elementId="com.nvidia.viper.analysisviewMStack" containerData="7500" selectedElement="_8rSXVPgTEeqojo11w8Drqg">
                 <tags>newtablook</tags>
-                <tags>noFocus</tags>
-                <tags>active</tags>
                 <children xsi:type="advanced:Placeholder" xmi:id="_8rSXVPgTEeqojo11w8Drqg" elementId="com.nvidia.viper.analysisview" ref="_8rM3wPgTEeqojo11w8Drqg"/>
                 <children xsi:type="advanced:Placeholder" xmi:id="_8rSXVfgTEeqojo11w8Drqg" elementId="com.nvidia.viper.expertview" ref="_8rNe0PgTEeqojo11w8Drqg"/>
                 <children xsi:type="advanced:Placeholder" xmi:id="_8rSXVvgTEeqojo11w8Drqg" elementId="com.nvidia.viper.cpuview" ref="_8rOF4PgTEeqojo11w8Drqg"/>
@@ -44,6 +44,7 @@
         </children>
       </children>
       <children xsi:type="basic:PartStack" xmi:id="_8pH0JfgTEeqojo11w8Drqg" elementId="stickyFolderRight" containerData="2500" selectedElement="_8pH0J_gTEeqojo11w8Drqg">
+        <tags>active</tags>
         <children xsi:type="advanced:Placeholder" xmi:id="_8pH0JvgTEeqojo11w8Drqg" elementId="org.eclipse.help.ui.HelpView" toBeRendered="false" ref="_8pH0IPgTEeqojo11w8Drqg"/>
         <children xsi:type="advanced:Placeholder" xmi:id="_8pH0J_gTEeqojo11w8Drqg" elementId="org.eclipse.ui.internal.introview" ref="_8pH0IfgTEeqojo11w8Drqg"/>
         <children xsi:type="advanced:Placeholder" xmi:id="_8pH0KPgTEeqojo11w8Drqg" elementId="org.eclipse.ui.cheatsheets.views.CheatSheetView" toBeRendered="false" ref="_8pH0IvgTEeqojo11w8Drqg"/>
@@ -54,9 +55,11 @@
       <tags>categoryTag:Help</tags>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8pH0IfgTEeqojo11w8Drqg" elementId="org.eclipse.ui.internal.introview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="Welcome" iconURI="platform:/plugin/org.eclipse.ui/icons/full/eview16/defaultview_misc.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view>&#xD;&#xA;&lt;presentation currentPage=&quot;root&quot; restore=&quot;true&quot;/>&#xD;&#xA;&lt;standbyPart/>&#xD;&#xA;&lt;/view>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view>&#xA;&lt;presentation currentPage=&quot;root&quot; restore=&quot;true&quot;/>&#xA;&lt;standbyPart/>&#xA;&lt;/view>"/>
       <tags>View</tags>
       <tags>categoryTag:General</tags>
+      <tags>active</tags>
+      <tags>activeOnClose</tags>
       <menus xmi:id="_8w0-oPgTEeqojo11w8Drqg" elementId="org.eclipse.ui.internal.introview">
         <tags>ViewMenu</tags>
         <tags>menuContribution:menu</tags>
@@ -72,14 +75,13 @@
         <tags>newtablook</tags>
         <tags>org.eclipse.e4.primaryDataStack</tags>
         <tags>EditorStack</tags>
+        <tags>noFocus</tags>
       </children>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rM3wPgTEeqojo11w8Drqg" elementId="com.nvidia.viper.analysisview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="Analysis" iconURI="platform:/plugin/com.nvidia.viper/icons/en/analysis_view.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
-      <tags>active</tags>
-      <tags>activeOnClose</tags>
       <menus xmi:id="_8syMIPgTEeqojo11w8Drqg" elementId="com.nvidia.viper.analysisview">
         <tags>ViewMenu</tags>
         <tags>menuContribution:menu</tags>
@@ -87,7 +89,7 @@
       <toolbar xmi:id="_8syMIfgTEeqojo11w8Drqg" elementId="com.nvidia.viper.analysisview"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rNe0PgTEeqojo11w8Drqg" elementId="com.nvidia.viper.expertview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="GPU Details (Summary)" iconURI="platform:/plugin/com.nvidia.viper/icons/en/detailed_view.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view expert.filteredBySelection=&quot;true&quot; expert.showFilteredTimelineData=&quot;false&quot; expert.showHiddenTimelineData=&quot;true&quot;/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view expert.filteredBySelection=&quot;true&quot; expert.showFilteredTimelineData=&quot;false&quot; expert.showHiddenTimelineData=&quot;true&quot;/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_HJI2QPgUEeqojo11w8Drqg" elementId="com.nvidia.viper.expertview">
@@ -97,7 +99,7 @@
       <toolbar xmi:id="_HJI2QfgUEeqojo11w8Drqg" elementId="com.nvidia.viper.expertview" visible="false"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rOF4PgTEeqojo11w8Drqg" elementId="com.nvidia.viper.cpuview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="CPU Details" iconURI="platform:/plugin/com.nvidia.viper/icons/en/cpu_view.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_HJusIPgUEeqojo11w8Drqg" elementId="com.nvidia.viper.cpuview">
@@ -107,7 +109,7 @@
       <toolbar xmi:id="_HJusIfgUEeqojo11w8Drqg" elementId="com.nvidia.viper.cpuview" visible="false"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rOF4fgTEeqojo11w8Drqg" elementId="com.nvidia.viper.openaccview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="OpenACC Details" iconURI="platform:/plugin/com.nvidia.viper/icons/en/code.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_HKsVcPgUEeqojo11w8Drqg" elementId="com.nvidia.viper.openaccview">
@@ -117,7 +119,7 @@
       <toolbar xmi:id="_HKsVcfgUEeqojo11w8Drqg" elementId="com.nvidia.viper.openaccview" visible="false"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rOF4vgTEeqojo11w8Drqg" elementId="com.nvidia.viper.openmpview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="OpenMP Details" iconURI="platform:/plugin/com.nvidia.viper/icons/en/code.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_HLC6wPgUEeqojo11w8Drqg" elementId="com.nvidia.viper.openmpview">
@@ -127,7 +129,7 @@
       <toolbar xmi:id="_HLC6wfgUEeqojo11w8Drqg" elementId="com.nvidia.viper.openmpview" visible="false"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rOF4_gTEeqojo11w8Drqg" elementId="com.nvidia.viper.consoleview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="Console" iconURI="platform:/plugin/com.nvidia.viper.application/icons/console_view.gif" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_HG720PgUEeqojo11w8Drqg" elementId="com.nvidia.viper.consoleview">
@@ -137,17 +139,17 @@
       <toolbar xmi:id="_HG720fgUEeqojo11w8Drqg" elementId="com.nvidia.viper.consoleview" visible="false"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rOs8PgTEeqojo11w8Drqg" elementId="com.nvidia.viper.settingsview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="Settings" iconURI="platform:/plugin/com.nvidia.viper.application/icons/settings_view.png" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_HLdxgPgUEeqojo11w8Drqg" elementId="com.nvidia.viper.settingsview">
         <tags>ViewMenu</tags>
         <tags>menuContribution:menu</tags>
       </menus>
-      <toolbar xmi:id="_HLdxgfgUEeqojo11w8Drqg" elementId="com.nvidia.viper.settingsview"/>
+      <toolbar xmi:id="_HLdxgfgUEeqojo11w8Drqg" elementId="com.nvidia.viper.settingsview" visible="false"/>
     </sharedElements>
     <sharedElements xsi:type="basic:Part" xmi:id="_8rOs8fgTEeqojo11w8Drqg" elementId="com.nvidia.viper.timelinepropertyview" contributionURI="bundleclass://org.eclipse.ui.workbench/org.eclipse.ui.internal.e4.compatibility.CompatibilityView" label="Properties" iconURI="platform:/plugin/com.nvidia.viper.application/icons/properties_view.gif" closeable="true">
-      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xD;&#xA;&lt;view/>"/>
+      <persistedState key="memento" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#xA;&lt;view/>"/>
       <tags>View</tags>
       <tags>categoryTag:Other</tags>
       <menus xmi:id="_8uO9oPgTEeqojo11w8Drqg" elementId="com.nvidia.viper.timelinepropertyview">
