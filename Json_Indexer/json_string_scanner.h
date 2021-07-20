@@ -90,7 +90,7 @@ simdjson_really_inline uint64_t json_string_scanner::find_escaped_branchless(uin
   // If there was overflow, pretend the first character isn't a backslash
   backslash &= ~prev_escaped;
   uint64_t follows_escape = backslash << 1 | prev_escaped;
-
+  
   // Get sequences starting on even bits by clearing out the odd series using +
   const uint64_t even_bits = 0x5555555555555555ULL;
   uint64_t odd_sequence_starts = backslash & ~even_bits & ~follows_escape;

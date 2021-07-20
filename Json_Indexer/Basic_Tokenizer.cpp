@@ -1,4 +1,10 @@
 //compile with: g++ -std=c++17 -Wall -mavx2 -mpclmul -msse2 -mbmi  Basic_Tokenizer.cpp json_character_block.cpp -o a.exe
+// simd.prev = in[248:128]prev[255:248]in[119:0]in[127:120];
+// for backslashes overflow, the last two digits (most significant) of the bit array should be either 10 or 11, if its 10 there
+// is definitely an overflow. Otherwise, find ~(a|b) (on the remaining bits) to get all 0 bits and a&b to get all 1 bits. If (a&b)>~(a|b)
+// then we have an overflow. on the other hand, if they are equal then this means that there is only one set bit on both a and b, so we have to find
+// the overflow of previous chunk.
+// use prefix-xor to find the propagation negation on most significant bits.
 
 #include <immintrin.h>
 
