@@ -8,6 +8,7 @@
     "fstream": "cpp",
     "istream": "cpp",
     "ranges": "cpp",
-    "streambuf": "cpp"
+    "streambuf": "cpp",
+    "ostream": "cpp"
   }
 }

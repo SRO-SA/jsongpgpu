@@ -201,24 +201,30 @@ int main(){
     p.set_capacity(SIMDJSON_MAXSIZE_BYTES);
     p.set_max_depth(DEFAULT_MAX_DEPTH);
     // Declare path
-    std::string path = "./../real-inputs/base.txt";
+    std::string path = "./../inputs/Tokenizetest.txt";
  
     // Read the contents of the file at the specified path
     std::string str = Utils::readAllText(path);
 
     //std::string str = "{\"k1\":\"v1\",\"k2\":\"v2\",\"k3\":\"v3\",\"k4\":{\"k5\":\"v4\",\"k6\":\"v5\"},\"k7\":[\"v6\",\"v7\",[]],\"k8\":1234}";
     bool isValid = validate_utf8(str.c_str(), str.size());
-    std::cout << isValid << std::endl;
+    //std::cout << isValid << std::endl;
     isValid = p.stage1((uint8_t *) str.c_str(), str.size(), false);
-    std::cout << isValid << std::endl;
-    std::cout << str.size() << std::endl;
+    //std::cout << isValid << std::endl;
+    //std::cout << str.size() << std::endl;
+    clock_t start, end;
+    double total= 0;
     for(int i=0; i< p.n_structural_indexes; i++){
+        start = clock();
         uint32_t *v = p.structural_indexes.get();
+        end = clock();
+        total += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
         printf("%08" PRIx32 " ", v[i]);
-        //std::bitset<32> t(v[i]);
-        //::cout << t << std::endl;
+        std::bitset<32> t(v[i]);
+        std::cout << t << std::endl;
         std::cout << i << std::endl;
     }
+    printf("%f\n", total);
     //simd8<uint8_t> buf = simd8<uint8_t>(str)
     return 0;
 }

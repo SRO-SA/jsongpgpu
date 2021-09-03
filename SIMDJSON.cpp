@@ -3,7 +3,7 @@
 #include <time.h>
 
 using namespace simdjson;
-double calcTime();
+    double calcTime();
 
 int main(){
     double meantime = 0;
@@ -16,6 +16,7 @@ int main(){
 
 double calcTime(){
     simdjson::dom::parser parser;
+    parser.set_max_capacity(4000000000);
     dom::document_stream docs;
     time_t start, end;
     time_t pstart, pend;
@@ -23,7 +24,7 @@ double calcTime(){
     double inttotal = 0;
     int count;
     start = clock();
-    parser.load_many("./real-inputs/base.txt").get(docs);
+    parser.load_many("./inputs/Tokenizetest.txt").get(docs);
     count = 0;
     for (auto doc : docs) {
         error = doc.error();

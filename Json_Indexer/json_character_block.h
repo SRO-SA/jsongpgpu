@@ -68,7 +68,7 @@ simdjson_really_inline json_character_block json_character_block::classify(const
     0, 0, 0, 0,
     0, 0, 0, 0,
     0, 0, ':', '{', // : = 3A, [ = 5B, { = 7B
-    ',', '}', 0, 0 ) // , = 2C, ] = 5D, } = 7D repeat_16ne or the
+    ',', '}', 0, 0 ); // , = 2C, ] = 5D, } = 7D repeat_16ne or the
   // other, given the fact that all functions are aggressively inlined, we can
   // hope that useless computations will be omitted. This is namely case when
   // minifying (we only need whitespace).
