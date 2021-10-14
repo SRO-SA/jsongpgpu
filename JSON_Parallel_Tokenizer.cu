@@ -119,7 +119,7 @@ int print_d(uint32_t* input_d, int length, int rows){
     for(long i =0; i<rows; i++){
       for(long j=0; j<length; j++){
         std::bitset<32> y(*(input+j+(i*length)));
-        if(j == 882) printf("----882----");
+        if(j == 129) printf("----129----");
         std::cout << y << ' ';
       }
       std::cout << std::endl;
@@ -583,9 +583,10 @@ void scatter_block(uint32_t* total_one_d, uint32_t* one_d, uint32_t* prefix_sum_
         int start = i*32;
         int end = (i+1)*32;
         uint32_t current_value = total_one_d[i];
-        for(int j = 0; j<32 && start+j<total_padded_32 ; j++){
-            //if(i==size-1) printf("%d\n", (uint32_t)((one_d[i] >> j) & 1));
+        for(unsigned int j = 0; j<32 && (start+j)<total_padded_32 ; j++){
+
             current_value += (uint32_t)((one_d[i] >> j) & 1);
+
             prefix_sum_ones[start+j] = current_value;
             
         }
@@ -847,7 +848,35 @@ void assign_open_close(uint8_t* block_d, uint32_t* open_d, uint32_t* close_d, in
     }
 }
 
-uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size){
+__global__
+void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res_d, uint32_t res_size, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for(long i = index; i<= open_close_reduced_size_tokens; i+=stride)
+    {
+        
+        if(i==0){
+            res_d[0] = '{';
+            res_d[res_size-2] = '}';
+            res_d[res_size-1] = ','; 
+        }
+        else{
+            uint32_t start = i==1 ? 0 : complete_records_d[i-2]+1;
+            uint32_t res_start = i==1 ? 1 : complete_records_d[i-2]+3+(i-2);
+            uint32_t res_end = i==1 ? complete_records_d[i-1]+1 : complete_records_d[i-1]+2+(i-2);
+            uint32_t end = complete_records_d[i-1];
+        
+            thrust::copy(thrust::device, &tokens_d[start], &tokens_d[end+1], &res_d[res_start]);
+            if (i < open_close_reduced_size_tokens) res_d[res_end+1] = ',';
+            //printf("endc: %c\n", res_d[end]);
+
+        }
+    }
+
+
+}
+
+uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_string_8){
     int total_padded_32 = (size+31)/32 ;
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
     uint32_t* backslashes_d;
@@ -1087,6 +1116,24 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size){
 
     //print_d(follows_nonquote_scalar_d, total_padded_32, ROW1);
 
+    start = clock();
+    parallel_not<<<numBlock, BLOCKSIZE>>>(whitespace_d, whitespace_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+    end = clock();
+    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    
+    //print_d(whitespace_d, total_padded_32, ROW1);
+
+
+    start = clock();
+    parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(in_string_d, whitespace_d, in_string_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+    end = clock();
+    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+
+    //print_d(in_string_d, total_padded_32, ROW1);
+
+
     uint8_t* in_string_8_d;
     cudaMalloc(&in_string_8_d, size * sizeof(uint8_t));
     start = clock();
@@ -1098,6 +1145,9 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size){
     //print_d(in_string_d, total_padded_32, ROW1);
     //print8_d<int>(in_string_8_d, size, ROW1);
 
+
+
+
     uint8_t* in_string;
     start = clock();
     parallel_and<uint8_t><<<numBlock, BLOCKSIZE>>>(in_string_8_d, block_d, in_string_8_d, size, size);
@@ -1105,6 +1155,8 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size){
     end = clock();
     std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
+    in_string_8  = (uint8_t*) malloc(size*sizeof(uint8_t));
+    cudaMemcpy(in_string_8, in_string_8_d, sizeof(uint8_t)*size, cudaMemcpyDeviceToHost);
     uint8_t* filtered_string_8_d;
     int sum = thrust::count_if(thrust::cuda::par, in_string_8_d, in_string_8_d+size, not_zero());
     cudaMalloc(&filtered_string_8_d, sum*sizeof(uint8_t));
@@ -1112,7 +1164,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size){
     thrust::copy_if(thrust::cuda::par, in_string_8_d, in_string_8_d+size, filtered_string_8_d, not_zero());
     in_string = (uint8_t* )malloc(sizeof(uint8_t)*sum);
 
-    //print8_d<int>(in_string_8_d, size, ROW1);
+    //print8(in_string_8, size, ROW1);
     cudaMemcpy(in_string, filtered_string_8_d, sizeof(uint8_t)*sum, cudaMemcpyDeviceToHost);
     ret_size = sum;
     //printf("%d\n", ret_size);
@@ -1122,7 +1174,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size){
 }
 
 
-uint8_t* get_last_record(uint8_t* block, int size, uint32_t &last_index){
+uint32_t* get_last_record(uint8_t* block, int size, uint32_t &last_index, uint32_t& open_close_reduced_size){
     clock_t start, end;
     
     uint32_t* open_d;
@@ -1144,7 +1196,6 @@ uint8_t* get_last_record(uint8_t* block, int size, uint32_t &last_index){
     int smallNumBlock = (total_padded_32_div_32 + BLOCKSIZE - 1) / BLOCKSIZE;
 
 
-
     cudaMalloc(&block_d, size*sizeof(uint8_t));
     cudaMemcpy(block_d, block, size*sizeof(uint8_t), cudaMemcpyHostToDevice);
     cudaMalloc(&open_d, total_padded_32*sizeof(uint32_t));
@@ -1159,6 +1210,7 @@ uint8_t* get_last_record(uint8_t* block, int size, uint32_t &last_index){
     assign_open_close<<<numBlock, BLOCKSIZE>>>(block_d, open_d, close_d,  size, total_padded_32);
     cudaDeviceSynchronize();
 
+    //print8_d<uint8_t>(block_d, size, ROW1);
     //print_d(open_d, total_padded_32, ROW1);
     //print_d(close_d, total_padded_32, ROW1);
 
@@ -1211,7 +1263,7 @@ uint8_t* get_last_record(uint8_t* block, int size, uint32_t &last_index){
     uint32_t* index_d;
 
     cudaMalloc(&index_d, size*sizeof(uint32_t));
-    ///TODO Fill from 0 to N
+    ///TODO Fill from 0 to N-1
     thrust::sequence(thrust::cuda::par, index_d, index_d+size);
 
     //print_d(index_d, size, ROW1);
@@ -1220,27 +1272,56 @@ uint8_t* get_last_record(uint8_t* block, int size, uint32_t &last_index){
     thrust::transform_if(thrust::cuda::par, index_d, index_d+size, open_block, index_d, functor<set_to_zero>(), not_zero());
 
     //print_d(index_d, size, ROW1);
-
-
-    //TODO set index of 0 to -1
+    
     int sum_zero = thrust::count_if(thrust::cuda::par, index_d, index_d+size, not_zero());
-    printf("%d\n", sum_zero);
+    //printf("%d\n", sum_zero);
     uint32_t* open_close_reduced_d;
+    uint32_t* open_close_reduced;
+
     cudaMalloc(&open_close_reduced_d, sum_zero*sizeof(uint32_t));
 
     thrust::copy_if(thrust::cuda::par, index_d, index_d+size, open_close_reduced_d, not_zero());
 
-    print_d(open_close_reduced_d, sum_zero, ROW1);
+    //print_d(open_close_reduced_d, sum_zero, ROW1);
+    open_close_reduced = (uint32_t *) malloc(sizeof(uint32_t)*sum_zero);
+    open_close_reduced_size = sum_zero;
+    //printf("%d\n", sum_zero);
+    cudaMemcpy(open_close_reduced, open_close_reduced_d, sizeof(uint32_t)*sum_zero, cudaMemcpyDeviceToHost);
+    //print(open_close_reduced, sum_zero, ROW1);
 
-    printf("%d\n", sum_zero);
-
-    cudaMemcpy(&last_index, &open_close_reduced_d[sum_zero-1], sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    last_index = open_close_reduced[sum_zero-1];
+    if(last_index != size) last_index = last_index+1;
+    //printf("%d\n", last_index);
     //last_index = open_close_reduced_d[sum_zero-1];
     //printf("DFSFDSFSD\n");
 
-    return block;
+    return open_close_reduced;
 }
 
+
+uint32_t* multi_to_one_record( uint8_t* tokens, uint32_t* complete_records, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
+    uint32_t res_size = last_index_tokens+open_close_reduced_size_tokens+2;
+    uint8_t* res = (uint8_t*)malloc(sizeof(uint32_t)*(res_size));
+    uint8_t* res_d;
+    cudaMalloc(&res_d, sizeof(uint8_t)*res_size);
+    //TODO put everything to device array;
+    uint8_t* tokens_d;
+    uint32_t* complete_records_d;
+    cudaMalloc(&tokens_d, sizeof(uint8_t)*ret_size);
+    cudaMalloc(&complete_records_d, sizeof(uint32_t)*open_close_reduced_size_tokens);
+    cudaMemcpy(tokens_d, tokens, sizeof(uint8_t)*ret_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(complete_records_d, complete_records, sizeof(uint32_t)*open_close_reduced_size_tokens, cudaMemcpyHostToDevice);
+    //print8(tokens, ret_size, ROW1);
+    //print_d(complete_records_d, open_close_reduced_size_tokens, ROW1);
+    //printf("%d\n", ret_size);
+    //printf("%d\n", res_size);
+
+    int numBlock = ((open_close_reduced_size_tokens + 1) + BLOCKSIZE - 1) / BLOCKSIZE;
+    parallel_copy<<<numBlock, BLOCKSIZE>>>(tokens_d, complete_records_d, res_d, res_size, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    //print8_d<uint8_t>(res_d, res_size, ROW1);
+    return NULL;
+
+}
 
 
 long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
@@ -1262,12 +1343,32 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
     start = clock();
     int ret_size = 0;
     //TODO Pass everything between blocks. in string, 
-    tokens = Tokenize(block_d, size, ret_size);
+    uint8_t* in_string_8;
+    tokens = Tokenize(block_d, size, ret_size, in_string_8);
     end = clock();
     double runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    uint8_t* complete_records;
+    uint32_t* complete_records;
     uint32_t last_index;
-    complete_records = get_last_record(tokens, ret_size, last_index);
+    uint32_t last_index_tokens;
+    uint32_t open_close_reduced_size_tokens;
+    uint32_t open_close_reduced_size;
+
+    //print8(in_string_8, size, ROW1);
+
+    complete_records = get_last_record(tokens, ret_size, last_index_tokens, open_close_reduced_size_tokens);   
+    //printf("ssssssssss\n");
+    get_last_record(in_string_8, size, last_index, open_close_reduced_size);
+
+
+    uint32_t* parser_input;
+
+    multi_to_one_record(tokens, complete_records, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    //int i = last_index;
+    //while(tokens[i] != in_string_8[last_index]) i--;
+    //i++;
+    //printf("i: %d\n", last_index);
+    //printf("i: %c\n", in_string_8[i]);
+    
 
     //print8(tokens, ret_size, ROW1);
     printf("total runtime: %f\n", runtime);
@@ -1312,6 +1413,8 @@ long *readFile(char* name){
    
     // Add NULL terminator at the end of our buffer
         buf[bytesread+sizeLeftover] = 0;   
+        //sizeLeftover>0 ?  print8(buf, sizeLeftover, ROW1) : NULL;
+
     // Process data - Replace with your function
     //
     // Function should return the position in the file or -1 if failed
@@ -1336,10 +1439,14 @@ long *readFile(char* name){
     // For protection if the remaining unprocessed buffer is too big
     // to leave sufficient room for a new line (MAXLINELENGTH), cap it
     // at maximumsize - MAXLINELENGTH
-        printf("%ld\n", bytesread+sizeLeftover-pos);
-        printf("%ld\n", sizeof(buf)-MAXLINELENGTH);
-        sizeLeftover = std::min(bytesread+sizeLeftover-pos, sizeof(buf)-MAXLINELENGTH);
-        printf("%ld\n", sizeLeftover);
+        //printf("%ld\n", bytesread);
+        //printf("%d\n", sizeLeftover);
+        //printf("%ld\n", pos);
+
+        //printf("%ld\n", bytesread+sizeLeftover-pos);
+        //printf("%ld\n", sizeof(buf)-MAXLINELENGTH);
+        sizeLeftover = bytesread+sizeLeftover-pos;
+        printf("%d\n", sizeLeftover);
     // Extra protection - should never happen but you can never be too safe
         if (sizeLeftover<1) sizeLeftover=0;
 
@@ -1348,6 +1455,7 @@ long *readFile(char* name){
     // current leftover and together complete a full readable line
         if (pos!=0 && sizeLeftover!=0)
         memmove(buf, buf+pos, sizeLeftover);
+        
         
     } while(!bLoopCompleted);
     return res;
