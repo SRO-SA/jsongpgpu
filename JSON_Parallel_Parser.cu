@@ -600,14 +600,14 @@ void generateRes(int length, long* arr, long* res)
 }
 
 
-double NewRuntime_Parallel_GPU(char* input, int length) {
+double NewRuntime_Parallel_GPU(char* input_d, int length) {
   cudaProfilerStart();
-  int attachedLength = length + 1;
+  int attachedLength = length;
   int numBlock = (attachedLength + BLOCKSIZE - 1) / BLOCKSIZE;
   long* res;
   long* fakeRes;
   long* arr;
-  char* attacheArr;
+  //char* attacheArr;
   clock_t start, end, allStart, allEnd;
   char* h_char_test;
   long* h_long_test;
@@ -615,23 +615,23 @@ double NewRuntime_Parallel_GPU(char* input, int length) {
 
   start = clock();
 
-  attacheArr = (char*) malloc(sizeof(char)*attachedLength);
-  memcpy(attacheArr, input, length*sizeof(char));
-  attacheArr[length] = ',';
+  //attacheArr = input;
+  //memcpy(attacheArr, input, length*sizeof(char));
+  //attacheArr[length] = ',';
   char* d_attacheArr;
   cudaMalloc(&d_attacheArr, attachedLength*sizeof(char));
-  cudaMemcpy(d_attacheArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_attacheArr, input_d, attachedLength*sizeof(char), cudaMemcpyDeviceToDevice);
   
   //cudaMallocManaged(&attacheArr, attachedLength*sizeof(char));
   //cudaMemcpy(attacheArr, input, length*sizeof(char), cudaMemcpyHostToDevice);
   //attacheArr[length] = ',';
   char* d_sameDepthArr;
   cudaMalloc(&d_sameDepthArr, attachedLength*sizeof(char));
-  cudaMemcpy(d_sameDepthArr, attacheArr, attachedLength*sizeof(char), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_sameDepthArr, input_d, attachedLength*sizeof(char), cudaMemcpyDeviceToDevice);
 
   changeDepth<<<numBlock, BLOCKSIZE>>>(attachedLength, d_attacheArr, d_sameDepthArr);
   cudaDeviceSynchronize();
-  free(attacheArr);
+  //free(attacheArr);
   cudaFree(d_attacheArr);
   end = clock();
   step1 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
@@ -785,6 +785,7 @@ double NewRuntime_Parallel_GPU(char* input, int length) {
       // print(h_long_test, (arrLength+resLength), ROW1);
       // free(h_long_test);
       // std::cout << "-------------End Last Step--------------" << std::endl;
+
       cudaFree(arr);
       cudaFree(res);
       allEnd = clock();

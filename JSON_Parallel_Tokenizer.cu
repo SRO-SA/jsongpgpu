@@ -8,6 +8,8 @@
 #include "cuda_profiler_api.h"
 #include <thrust/sort.h>
 #include <thrust/device_ptr.h>
+#include <thrust/binary_search.h>
+#include <thrust/device_vector.h>
 #include <thrust/copy.h>
 #include <thrust/scan.h>
 #include <string.h>
@@ -15,6 +17,7 @@
 #include <bitset>
 #include "JSON_Parallel_Parser.h"
 #include <thrust/transform.h>
+#include <inttypes.h>
 
 #define        MAXLINELENGTH    4194304 // Max record size
 #define        BUFSIZE      4194304
@@ -101,6 +104,18 @@ struct functor{
 
 __host__ __device__ uint32_t set_to_zero(const uint32_t& x) { return 0;}
 
+
+
+int print_array(long* input, int length, int rows){
+    for(long i =0; i<rows; i++){
+      for(long j=0; j<length; j++){
+        std::cout << *(input+j+(i*length)) << ' ';
+      }
+      std::cout << std::endl;
+    }
+    return 1;
+  }
+
 int print(uint32_t* input, int length, int rows){
     for(long i =0; i<rows; i++){
       for(long j=0; j<length; j++){
@@ -185,12 +200,12 @@ void parallel_not(uint32_t* input, uint32_t* output, uint64_t size, int total_pa
 
 template<typename T>
 __global__
-void single_parallel_and(T* input, int value, T* output, uint64_t size, int total_padded_32){
+void single_parallel_and(T* input, uint8_t value, T* output, uint64_t size, int total_padded_32){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride)
     {
-        output[i] = input[i] & value; 
+        output[i] = input[i] & ((uint32_t)value | (uint32_t)value << 8 | (uint32_t)value << 16 | (uint32_t)value << 24);
     }
 }
 
@@ -221,6 +236,10 @@ void parallel_xor(uint32_t *input1, uint32_t *input2, uint32_t* output, uint64_t
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride)
     {
+            /*if(i==0){
+                printf("input1: %d\n", input1[i]);
+                printf("input2: %d\n", input2[i]);
+            }*/
             output[i] = input1[i] ^ input2[i]; 
     }
 }
@@ -233,7 +252,9 @@ void permute_32(uint8_t *block_d, uint32_t *permutation_output_d, uint64_t size,
     {
         int prev = (i-1)*4;
         int start = i*4;
-        permutation_output_d[i] = block_d[prev+2] | (block_d[prev+3] << 8) | (block_d[start] << 16) | (block_d[start+1] << 24);
+        
+        permutation_output_d[i] = i!=0 ?  block_d[prev+2] | (block_d[prev+3] << 8) | (block_d[start] << 16) | (block_d[start+1] << 24) :
+                                        0 | 0 << 8 | (block_d[start] << 16) | (block_d[start+1] << 24);
     }
 }
 
@@ -245,9 +266,9 @@ void align_right(uint32_t* permutation_output_d, uint8_t* block_d, uint32_t* pre
     {
         //int prev = (i-1)*4;
         int start = i*4;
-        uint32_t dist1 = ((block_d[start] << 24 | block_d[start+1] << 16) 
+        uint32_t dist1 = (((uint32_t)block_d[start] << 24 | (uint32_t)block_d[start+1] << 16) 
         | (permutation_output_d[i] & 0x0000ffff)) >> shift*8;
-        uint32_t dist2 = ((block_d[start+2] << 24 | block_d[start+3] << 16) 
+        uint32_t dist2 = (((uint32_t)block_d[start+2] << 24 | (uint32_t)block_d[start+3] << 16) 
         | ((permutation_output_d[i] & 0xffff0000) >> 16)) >> shift*8;
 
     
@@ -265,9 +286,12 @@ void is_incomplete(uint8_t* block, uint32_t* prev_incomplete_d, uint64_t size, i
     for(long i = index; i< total_padded_32; i+=stride)
     {
         //int prev = (i-1)*4;
+        //printf("prev: %ld\n", i);
         int start = i*4;
         uint32_t val = (uint32_t)block[start] | (uint32_t)(block[start+1] << 8) | (uint32_t)(block[start+2] << 16) | (uint32_t)(block[start+3] << 24);
         prev_incomplete_d[i] = __vsubus4(val, max_val);
+        //printf("now %ld\n", i);
+
     }
 
 }
@@ -284,7 +308,7 @@ void check_incomplete_ascii(uint8_t* block, uint32_t* prev_incomplete_d, uint32_
                     | ((block[start+1]&0b10000000) >> 6) 
                     | ((block[start+2]&0b10000000) >> 5) 
                     | ((block[start+3]&0b10000000) >> 4)) == 0;
-        if(is_ascii_d[i]) is_ascii_d[i] = prev_incomplete_d[i-1];
+        if(is_ascii_d[i] && i!=0) is_ascii_d[i] = prev_incomplete_d[i-1];
         else is_ascii_d[i] = 0;
     }
 
@@ -299,10 +323,21 @@ void must_be_2_3_continuation(uint32_t* prev1, uint32_t* prev2, uint32_t* must32
     {
         //int prev = (i-1)*4;
         //int start = i*4;
-        uint32_t is_third_byte = __vsubus4(prev1[i], 0b11100000u-1);
-        uint32_t is_fourth_byte = __vsubus4(prev1[i], 0b11110000u-1);
-        uint32_t gt = __vsubus4((is_third_byte | is_fourth_byte), int8_t(0));
-        must32_d[i] = ~(gt == uint8_t(0));
+        uint32_t third_subtract_byte = (0b11100000u-1) | (0b11100000u-1) << 8 | (0b11100000u-1) << 16 | (0b11100000u-1) << 24;
+        uint32_t fourth_subtract_byte = (0b11110000u-1) | (0b11110000u-1) << 8 | (0b11110000u-1) << 16 | (0b11110000u-1) << 24;
+        uint32_t is_third_byte = __vsubus4(prev1[i], third_subtract_byte);
+        uint32_t is_fourth_byte = __vsubus4(prev1[i], fourth_subtract_byte);
+        /*if(i==0){
+            printf("Third %d\n", is_third_byte);
+            printf("Fourth %d\n", is_fourth_byte);
+
+        }*/
+
+        uint32_t gt = __vsubus4((is_third_byte | is_fourth_byte), int32_t(0));
+        must32_d[i] = gt == uint8_t(0) ? 0x01010101UL : 0x00000000UL;
+        /*if(i==0){
+            printf("gt: %d\n", gt);
+        }*/
     }
 }
 
@@ -425,7 +460,12 @@ void check_special_cases(uint8_t* block_d, uint32_t* prev1_d, uint32_t* sc_d, ui
 uint8_t prefix_or(uint32_t* is_ascii_d, uint64_t size, int total_padded_32){
 
     thrust::inclusive_scan(thrust::cuda::par, is_ascii_d, is_ascii_d + total_padded_32, is_ascii_d);
-    return (uint8_t)is_ascii_d[total_padded_32-1];
+    uint32_t error;
+    cudaMemcpy(&error, is_ascii_d+total_padded_32-1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    printf("error %d\n", error);
+
+    return (uint8_t)error;
+
 
 }
   
@@ -437,47 +477,92 @@ bool UTF8Validate(uint8_t * block_d, uint64_t size){
     uint32_t* prev_incomplete_d;
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
 
-    print8_d<uint8_t>(block_d, (int)size, ROW1);
-
+    //print8_d<uint8_t>(block_d, (int)size, ROW1);
 
     cudaMalloc(&is_ascii_d, sizeof(uint32_t)*total_padded_32);
     cudaMalloc(&prev_incomplete_d, sizeof(uint32_t)*total_padded_32);
 
     is_incomplete<<<numBlock, BLOCKSIZE>>>(block_d, prev_incomplete_d, size, total_padded_32);
+    cudaDeviceSynchronize();
 
-    print_d(prev_incomplete_d, total_padded_32, ROW1);
+
+    //print_d(prev_incomplete_d, total_padded_32, ROW1);
 
     check_incomplete_ascii<<<numBlock, BLOCKSIZE>>>(block_d, prev_incomplete_d, is_ascii_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+
+    //printf("FDFDFDFD\n");
+
     uint8_t error = prefix_or(is_ascii_d, size, total_padded_32);
-    std::cout << "HERE" << std::endl;
+
+    //printf("error %d\n", error);
+
+    //std::cout << "HERE" << std::endl;
+
+
 
     if(error != 0) return false;
 
     cudaMalloc(&permutation_output_d, sizeof(uint32_t)*total_padded_32);
     permute_32<<<numBlock, BLOCKSIZE>>>(block_d, permutation_output_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+
+    //print_d(permutation_output_d, total_padded_32, ROW1);
+
     uint32_t* prev1_d=is_ascii_d, *sc_d=prev_incomplete_d;
     //cudaMalloc(&prev1, sizeof(uint32_t)*total_padded_32);
     //cudaMalloc(&sc, sizeof(uint32_t)*total_padded_32);
     align_right<<<numBlock, BLOCKSIZE>>>(permutation_output_d, block_d, prev1_d, size, total_padded_32, 4-1);
+    cudaDeviceSynchronize();
+    //printf("align1\n");
+    //print_d(prev1_d, total_padded_32, ROW1);
     check_special_cases<<<numBlock, BLOCKSIZE>>>(block_d, prev1_d, sc_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+    //printf("special\n");
+    //print_d(sc_d, total_padded_32, ROW1);
+
+    cudaFree(prev1_d);
     uint32_t* prev2_d = prev1_d, *prev3_d;
     cudaMalloc(&prev2_d, sizeof(uint32_t)*total_padded_32);
     cudaMalloc(&prev3_d, sizeof(uint32_t)*total_padded_32);
     align_right<<<numBlock, BLOCKSIZE>>>(permutation_output_d, block_d, prev2_d, size, total_padded_32, 4-2);
+    cudaDeviceSynchronize();
+    //printf("align2\n");
+    //print_d(prev2_d, total_padded_32, ROW1);
+
     align_right<<<numBlock, BLOCKSIZE>>>(permutation_output_d, block_d, prev3_d, size, total_padded_32, 4-3);
+    cudaDeviceSynchronize();
+    //printf("align3\n");
+    //print_d(prev3_d, total_padded_32, ROW1);
+    cudaFree(permutation_output_d);
+
     uint32_t* must32_d;
     cudaMalloc(&must32_d, sizeof(uint32_t)*total_padded_32);
     must_be_2_3_continuation<<<numBlock, BLOCKSIZE>>>(prev2_d, prev3_d, must32_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+    //printf("must32_d\n");
+    //print_d(must32_d, total_padded_32, ROW1);
+    cudaFree(prev2_d);
+    cudaFree(prev3_d);
+
     uint32_t* must32_80_d, *must32_80_sc_d;
     cudaMalloc(&must32_80_d, sizeof(uint32_t)*total_padded_32);
     cudaMalloc(&must32_80_sc_d, sizeof(uint32_t)*total_padded_32);
 
     single_parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(must32_d, 0x80, must32_80_d, size, total_padded_32);
+    cudaDeviceSynchronize();
+    //printf("must32_80_d\n");
+    //print_d(must32_80_d, total_padded_32, ROW1);
+    cudaFree(must32_d);
+
 
     parallel_xor<<<numBlock, BLOCKSIZE>>>(must32_80_d, sc_d, must32_80_sc_d, size, total_padded_32);
-
+    cudaDeviceSynchronize();
+    cudaFree(must32_80_d);
+    cudaFree(sc_d);
 
     error = prefix_or(must32_80_sc_d, size, total_padded_32);
+    cudaFree(must32_80_sc_d);
     return !(error);
 
 }
@@ -561,7 +646,7 @@ __global__
 void scatter(uint32_t* total_one_32_d, uint32_t* total_one_d, uint32_t* prefix_sum_ones, int size, int total_padded_32){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
-    for(long i = index; i<= size; i+=stride)
+    for(long i = index; i< size; i+=stride)
     {
         int start = i*32;
         int end = (i+1)*32;
@@ -798,6 +883,7 @@ void find_escaped(uint32_t* backslashes_d, uint32_t* escaped_d, int total_padded
         uint32_t has_overflow = 2;
         uint32_t even_bits = 0x55555555UL;
         long j=i-1;
+        if(i==0) has_overflow = 0;
         while(has_overflow == 2){
             uint32_t follows_escape_t = backslashes_d[j] << 1;
             uint32_t odd_seq_t = backslashes_d[j] & ~even_bits & ~follows_escape_t;
@@ -852,9 +938,12 @@ __global__
 void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res_d, uint32_t res_size, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
-    for(long i = index; i<= open_close_reduced_size_tokens; i+=stride)
+    for(uint32_t i = index; i< ret_size; i+=stride)
     {
-        
+        //if (i==192)printf("complete_d: %d\n", *(complete_records_d+open_close_reduced_size_tokens-1));
+        //if (i==64)printf("complete_d: %d\n", *(complete_records_d+open_close_reduced_size_tokens-1));
+
+        /*    
         if(i==0){
             res_d[0] = '{';
             res_d[res_size-2] = '}';
@@ -865,18 +954,51 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res
             uint32_t res_start = i==1 ? 1 : complete_records_d[i-2]+3+(i-2);
             uint32_t res_end = i==1 ? complete_records_d[i-1]+1 : complete_records_d[i-1]+2+(i-2);
             uint32_t end = complete_records_d[i-1];
-        
-            thrust::copy(thrust::device, &tokens_d[start], &tokens_d[end+1], &res_d[res_start]);
+            //for(uint32_t j=0; j<end+1-start; j++){
+            //    res_d[res_start+j] = tokens_d[start+j];
+            //}
+            uint32_t* j=thrust::lower_bound(thrust::device, complete_records_d, complete_records_d+open_close_reduced_size_tokens, i);
+            uint32_t  = (uint32_t) j - (uint32_t) complete_records_d;
+            cudaMemcpyAsync(res_d+res_start, tokens_d+start , sizeof(uint8_t)*(end+1-start), cudaMemcpyDeviceToDevice, 0);
+            //thrust::copy(thrust::device, &tokens_d[start], &tokens_d[end+1], &res_d[res_start]);
             if (i < open_close_reduced_size_tokens) res_d[res_end+1] = ',';
             //printf("endc: %c\n", res_d[end]);
 
         }
+        */
+        uint32_t* j_pointer;
+        //thrust::device_ptr<uint32_t> thrust_complete_records_d = thrust::device_pointer_cast(complete_records_d);
+
+        //printf("%d\n", open_close_reduced_size_tokens);
+        j_pointer =  thrust::lower_bound(thrust::seq,
+            complete_records_d,
+            complete_records_d+open_close_reduced_size_tokens-1,
+            i);
+        
+        ptrdiff_t j_index = (j_pointer - complete_records_d);
+
+        /*printf("i: %d, *j_pointer: %d, j_pointer: %p, complete_records: %p, j_index: %ld,\n",
+                i,
+                j_pointer[0],
+                j_pointer,
+                complete_records_d,
+                j_index);
+
+            */
+        uint32_t j = j_index == 0 ? i : i - (*(j_pointer-1)+1);
+        uint32_t start = j_index==0 ? 0 : *(j_pointer-1);
+        uint32_t res_start = j_index==0 ? 1 : *(j_pointer-1)+j_index + 2;
+        res_d[res_start+j] = tokens_d[i];
+        if(i== *(j_pointer) && i<ret_size-1) res_d[res_start+j+1] = ','; //why shifted twice?
+        if(i == 0){
+            res_d[0] = '[';
+            res_d[res_size-2] = ']';
+            res_d[res_size-1] = ',';    
+        }
     }
-
-
 }
 
-uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_string_8){
+uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_string_8_out_d){
     int total_padded_32 = (size+31)/32 ;
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
     uint32_t* backslashes_d;
@@ -1148,33 +1270,36 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
 
 
 
-    uint8_t* in_string;
+    uint8_t* in_string_out_d;
     start = clock();
     parallel_and<uint8_t><<<numBlock, BLOCKSIZE>>>(in_string_8_d, block_d, in_string_8_d, size, size);
     cudaDeviceSynchronize();
     end = clock();
     std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
-    in_string_8  = (uint8_t*) malloc(size*sizeof(uint8_t));
-    cudaMemcpy(in_string_8, in_string_8_d, sizeof(uint8_t)*size, cudaMemcpyDeviceToHost);
+    //in_string_8  = (uint8_t*) malloc(size*sizeof(uint8_t));
+    //cudaMemcpy(in_string_8, in_string_8_d, sizeof(uint8_t)*size, cudaMemcpyDeviceToHost);
+    in_string_8_out_d = in_string_8_d;
+
     uint8_t* filtered_string_8_d;
     int sum = thrust::count_if(thrust::cuda::par, in_string_8_d, in_string_8_d+size, not_zero());
     cudaMalloc(&filtered_string_8_d, sum*sizeof(uint8_t));
 
     thrust::copy_if(thrust::cuda::par, in_string_8_d, in_string_8_d+size, filtered_string_8_d, not_zero());
-    in_string = (uint8_t* )malloc(sizeof(uint8_t)*sum);
+    //in_string_out_d = (uint8_t* )malloc(sizeof(uint8_t)*sum);
 
     //print8(in_string_8, size, ROW1);
-    cudaMemcpy(in_string, filtered_string_8_d, sizeof(uint8_t)*sum, cudaMemcpyDeviceToHost);
+    //cudaMemcpy(in_string_out_d, filtered_string_8_d, sizeof(uint8_t)*sum, cudaMemcpyDeviceToHost);
+    in_string_out_d = filtered_string_8_d;
     ret_size = sum;
     //printf("%d\n", ret_size);
-    //print8(in_string, size, ROW1);
+    //print8(in_string, sum, ROW1);
 
-    return in_string;
+    return in_string_out_d;
 }
 
 
-uint32_t* get_last_record(uint8_t* block, int size, uint32_t &last_index, uint32_t& open_close_reduced_size){
+uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint32_t& open_close_reduced_size){
     clock_t start, end;
     
     uint32_t* open_d;
@@ -1189,15 +1314,15 @@ uint32_t* get_last_record(uint8_t* block, int size, uint32_t &last_index, uint32
     uint32_t* open_prefix_sum_d;
     uint32_t* close_prefix_sum_d;
 
-    uint8_t* block_d;
+    //uint8_t* block_d;
     int total_padded_32 = (size+31)/32 ;
     int numBlock = (size + BLOCKSIZE - 1) / BLOCKSIZE;
     int total_padded_32_div_32 = (total_padded_32+31)/32 ;
     int smallNumBlock = (total_padded_32_div_32 + BLOCKSIZE - 1) / BLOCKSIZE;
 
 
-    cudaMalloc(&block_d, size*sizeof(uint8_t));
-    cudaMemcpy(block_d, block, size*sizeof(uint8_t), cudaMemcpyHostToDevice);
+    //cudaMalloc(&block_d, size*sizeof(uint8_t));
+    //cudaMemcpy(block_d, block, size*sizeof(uint8_t), cudaMemcpyHostToDevice);
     cudaMalloc(&open_d, total_padded_32*sizeof(uint32_t));
     cudaMalloc(&close_d, total_padded_32*sizeof(uint32_t));
 
@@ -1241,6 +1366,10 @@ uint32_t* get_last_record(uint8_t* block, int size, uint32_t &last_index, uint32
     //print_d(open_prefix_sum_d, total_padded_32, ROW1);
     //print_d(close_prefix_sum_d, total_padded_32, ROW1);
 
+    cudaFree(open_count_d);
+    cudaFree(close_count_d);
+    cudaFree(open_count_32_d);
+    cudaFree(close_count_32_d);
 
     uint32_t* open_block;
     uint32_t* close_block;
@@ -1254,7 +1383,10 @@ uint32_t* get_last_record(uint8_t* block, int size, uint32_t &last_index, uint32
     
     //print_d(open_block, size, ROW1);
     //print_d(close_block, size, ROW1);
-
+    cudaFree(open_d);
+    cudaFree(close_d);
+    cudaFree(open_prefix_sum_d);
+    cudaFree(close_prefix_sum_d);
     
     thrust::transform(thrust::cuda::par, open_block, open_block+size, close_block, open_block, thrust::minus<uint32_t>());
 
@@ -1276,50 +1408,77 @@ uint32_t* get_last_record(uint8_t* block, int size, uint32_t &last_index, uint32
     int sum_zero = thrust::count_if(thrust::cuda::par, index_d, index_d+size, not_zero());
     //printf("%d\n", sum_zero);
     uint32_t* open_close_reduced_d;
-    uint32_t* open_close_reduced;
+    uint32_t* open_close_reduced_out_d;
 
     cudaMalloc(&open_close_reduced_d, sum_zero*sizeof(uint32_t));
+    cudaFree(open_block);
+    cudaFree(close_block);
 
     thrust::copy_if(thrust::cuda::par, index_d, index_d+size, open_close_reduced_d, not_zero());
 
     //print_d(open_close_reduced_d, sum_zero, ROW1);
-    open_close_reduced = (uint32_t *) malloc(sizeof(uint32_t)*sum_zero);
+    //open_close_reduced = (uint32_t *) malloc(sizeof(uint32_t)*sum_zero);
     open_close_reduced_size = sum_zero;
     //printf("%d\n", sum_zero);
-    cudaMemcpy(open_close_reduced, open_close_reduced_d, sizeof(uint32_t)*sum_zero, cudaMemcpyDeviceToHost);
+    open_close_reduced_out_d = open_close_reduced_d;
+    //cudaMemcpy(open_close_reduced, open_close_reduced_d, sizeof(uint32_t)*sum_zero, cudaMemcpyDeviceToHost);
     //print(open_close_reduced, sum_zero, ROW1);
-
-    last_index = open_close_reduced[sum_zero-1];
+    //cudaFree(open_close_reduced_d);
+    
+    cudaMemcpy(&last_index, open_close_reduced_out_d+sum_zero-1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    //last_index = open_close_reduced[sum_zero-1];
     if(last_index != size) last_index = last_index+1;
     //printf("%d\n", last_index);
     //last_index = open_close_reduced_d[sum_zero-1];
     //printf("DFSFDSFSD\n");
 
-    return open_close_reduced;
+    return open_close_reduced_out_d;
 }
 
 
-uint32_t* multi_to_one_record( uint8_t* tokens, uint32_t* complete_records, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
+uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t* complete_records_d, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
+    clock_t start, end;
+    start = clock();
+
+    int numBlock = ((ret_size) + BLOCKSIZE - 1) / BLOCKSIZE;
+
     uint32_t res_size = last_index_tokens+open_close_reduced_size_tokens+2;
-    uint8_t* res = (uint8_t*)malloc(sizeof(uint32_t)*(res_size));
+    //uint8_t* res = (uint8_t*)malloc(sizeof(uint32_t)*(res_size));
     uint8_t* res_d;
     cudaMalloc(&res_d, sizeof(uint8_t)*res_size);
     //TODO put everything to device array;
-    uint8_t* tokens_d;
-    uint32_t* complete_records_d;
-    cudaMalloc(&tokens_d, sizeof(uint8_t)*ret_size);
-    cudaMalloc(&complete_records_d, sizeof(uint32_t)*open_close_reduced_size_tokens);
-    cudaMemcpy(tokens_d, tokens, sizeof(uint8_t)*ret_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(complete_records_d, complete_records, sizeof(uint32_t)*open_close_reduced_size_tokens, cudaMemcpyHostToDevice);
+    //uint8_t* tokens_d;
+    //uint32_t* complete_records_d;
+    //cudaMalloc(&tokens_d, sizeof(uint8_t)*ret_size);
+    //cudaMalloc(&complete_records_d, sizeof(uint32_t)*open_close_reduced_size_tokens);
+    //cudaMemcpy(tokens_d, tokens, sizeof(uint8_t)*ret_size, cudaMemcpyHostToDevice);
+    //cudaMemcpy(complete_records_d, complete_records, sizeof(uint32_t)*open_close_reduced_size_tokens, cudaMemcpyHostToDevice);
+
     //print8(tokens, ret_size, ROW1);
     //print_d(complete_records_d, open_close_reduced_size_tokens, ROW1);
     //printf("%d\n", ret_size);
     //printf("%d\n", res_size);
 
-    int numBlock = ((open_close_reduced_size_tokens + 1) + BLOCKSIZE - 1) / BLOCKSIZE;
+    
     parallel_copy<<<numBlock, BLOCKSIZE>>>(tokens_d, complete_records_d, res_d, res_size, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    
+    cudaDeviceSynchronize();
+
+    //cudaMemcpy(res, res_d, res_size*sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
+    end = clock();
+
+
+    //cudaFree(tokens_d);
+    
+    //cudaFree(complete_records_d);
+
+    //cudaFree(res_d);
+
+    printf("inside %f\n", ((double)(end-start)/CLOCKS_PER_SEC)*1000);
+
     //print8_d<uint8_t>(res_d, res_size, ROW1);
-    return NULL;
+    return res_d;
 
 }
 
@@ -1328,41 +1487,52 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
     if(bLoopCompleted == 1) return 0;
     uint8_t * block_d;
     uint64_t * parse_tree; 
-    uint8_t* tokens;
+    uint8_t* tokens_d;
+    clock_t start, end;
+    double runtime=0, utf_runtime = 0, tokenize_runtime = 0, last_record_runtime = 0, multi_to_one_runtime = 0, parser_runtime=0;
     //printf("%c\n", (char)block[0]);
     cudaMalloc(&block_d, BUFSIZE*sizeof(uint8_t));
     cudaMemcpy(block_d, block, sizeof(uint8_t)*size, cudaMemcpyHostToDevice);
+    start = clock();
+    bool isValidUTF8 = UTF8Validate(block_d, size);
+    end = clock();
+    utf_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
 
-    /*bool isValidUTF8 = UTF8Validate(block_d, size);
     if(!isValidUTF8) {
         printf("not a valid utf input\n"); 
         exit(0);
-    }*/
+    }
 
-    clock_t start, end;
     start = clock();
     int ret_size = 0;
     //TODO Pass everything between blocks. in string, 
-    uint8_t* in_string_8;
-    tokens = Tokenize(block_d, size, ret_size, in_string_8);
+    uint8_t* in_string_8_d;
+    tokens_d = Tokenize(block_d, size, ret_size, in_string_8_d);
     end = clock();
-    double runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    uint32_t* complete_records;
+    tokenize_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    uint32_t* complete_records_d;
     uint32_t last_index;
     uint32_t last_index_tokens;
     uint32_t open_close_reduced_size_tokens;
     uint32_t open_close_reduced_size;
 
-    //print8(in_string_8, size, ROW1);
+    //print8_d<uint8_t>(in_string_8_d, size, ROW1);
 
-    complete_records = get_last_record(tokens, ret_size, last_index_tokens, open_close_reduced_size_tokens);   
+    start = clock();
+    complete_records_d = get_last_record(tokens_d, ret_size, last_index_tokens, open_close_reduced_size_tokens);
     //printf("ssssssssss\n");
-    get_last_record(in_string_8, size, last_index, open_close_reduced_size);
-
+    get_last_record(in_string_8_d, size, last_index, open_close_reduced_size);
+    end = clock();
+    last_record_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
 
     uint32_t* parser_input;
 
-    multi_to_one_record(tokens, complete_records, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    start = clock();
+    int all_in_one_size = last_index_tokens+open_close_reduced_size_tokens+2;
+    uint8_t* all_in_one_d =  multi_to_one_record(tokens_d, complete_records_d, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    end = clock();
+    multi_to_one_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+
     //int i = last_index;
     //while(tokens[i] != in_string_8[last_index]) i--;
     //i++;
@@ -1370,11 +1540,28 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
     //printf("i: %c\n", in_string_8[i]);
     
 
-    //print8(tokens, ret_size, ROW1);
+    //print8_d<uint8_t>(all_in_one_d, all_in_one_size, ROW1);
+
+    start = clock();
+    NewRuntime_Parallel_GPU((char *)all_in_one_d, all_in_one_size);
+    end = clock();
+    parser_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+
+    //print8_d<uint8_t>(all_in_one_d, all_in_one_size, ROW1);
+    runtime = utf_runtime + tokenize_runtime + last_record_runtime + multi_to_one_runtime + parser_runtime;
+
+    
+    printf("utf runtime: %f\n", utf_runtime);
+    printf("tokenize runtime: %f\n", tokenize_runtime);
+    printf("last record runtime: %f\n", last_record_runtime);
+    printf("multi to one runtime: %f\n", multi_to_one_runtime);
+    printf("parser runtime: %f\n", parser_runtime);
     printf("total runtime: %f\n", runtime);
     
 
     return last_index;
+
+    //return 0; //For now
 }
 
 
