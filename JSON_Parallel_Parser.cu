@@ -753,7 +753,7 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       // std::cout << "-------------End Eighth Step--------------" << std::endl;
 
       long* sumRes;
-      cudaMalloc(&sumRes, arrLength*ROW1*sizeof(long));
+      //cudaMalloc(&sumRes, arrLength*ROW1*sizeof(long));
       start = clock();
       sumRes = scan(arrLength, fakeRes);
       end = clock();
