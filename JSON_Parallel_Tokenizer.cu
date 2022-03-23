@@ -993,7 +993,7 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res
         if(i == 0){
             res_d[0] = '[';
             res_d[res_size-2] = ']';
-            res_d[res_size-1] = ',';    
+            res_d[res_size-1] = ',';
         }
     }
 }
@@ -1550,7 +1550,11 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
     //print8_d<uint8_t>(all_in_one_d, all_in_one_size, ROW1);
     runtime = utf_runtime + tokenize_runtime + last_record_runtime + multi_to_one_runtime + parser_runtime;
 
-    
+    cudaFree(tokens_d);
+    cudaFree(block_d);
+    cudaFree(complete_records_d);
+    cudaFree(all_in_one_d);
+
     printf("utf runtime: %f\n", utf_runtime);
     printf("tokenize runtime: %f\n", tokenize_runtime);
     printf("last record runtime: %f\n", last_record_runtime);
