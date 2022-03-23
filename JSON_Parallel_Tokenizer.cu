@@ -938,7 +938,7 @@ __global__
 void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res_d, uint32_t res_size, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
-    for(uint32_t i = index; i< ret_size; i+=stride)
+    for(uint32_t i = index; i< last_index_tokens; i+=stride)
     {
         //if (i==192)printf("complete_d: %d\n", *(complete_records_d+open_close_reduced_size_tokens-1));
         //if (i==64)printf("complete_d: %d\n", *(complete_records_d+open_close_reduced_size_tokens-1));
@@ -989,7 +989,7 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res
         uint32_t start = j_index==0 ? 0 : *(j_pointer-1);
         uint32_t res_start = j_index==0 ? 1 : *(j_pointer-1)+j_index + 2;
         res_d[res_start+j] = tokens_d[i];
-        if(i== *(j_pointer) && i<ret_size-1) res_d[res_start+j+1] = ','; //why shifted twice?
+        if(i== *(j_pointer) && i<last_index_tokens-1) res_d[res_start+j+1] = ','; //why shifted twice?
         if(i == 0){
             res_d[0] = '[';
             res_d[res_size-2] = ']';
@@ -1440,7 +1440,7 @@ uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t* complete_records_d, u
     clock_t start, end;
     start = clock();
 
-    int numBlock = ((ret_size) + BLOCKSIZE - 1) / BLOCKSIZE;
+    int numBlock = ((last_index_tokens) + BLOCKSIZE - 1) / BLOCKSIZE;
 
     uint32_t res_size = last_index_tokens+open_close_reduced_size_tokens+2;
     //uint8_t* res = (uint8_t*)malloc(sizeof(uint32_t)*(res_size));
