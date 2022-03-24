@@ -501,7 +501,7 @@ bool UTF8Validate(uint8_t * block_d, uint64_t size){
 
 
 
-    if(error != 0) return false;
+    if(error != 0){ printf("Incomplete ASCII!\n"); return false;}
 
     cudaMalloc(&permutation_output_d, sizeof(uint32_t)*total_padded_32);
     permute_32<<<numBlock, BLOCKSIZE>>>(block_d, permutation_output_d, size, total_padded_32);
@@ -1493,7 +1493,7 @@ uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t* complete_records_d, u
 }
 
 
-long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
+long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double & total_runtime){
     if(bLoopCompleted == 1) return 0;
     uint8_t * block_d;
     uint64_t * parse_tree; 
@@ -1556,10 +1556,11 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
     NewRuntime_Parallel_GPU((char *)all_in_one_d, all_in_one_size);
     end = clock();
     parser_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-
+                                                        // RUN time ?!
     //print8_d<uint8_t>(all_in_one_d, all_in_one_size, ROW1);
     runtime = utf_runtime + tokenize_runtime + last_record_runtime + multi_to_one_runtime + parser_runtime;
 
+    cudaDeviceSynchronize();
     cudaFree(tokens_d);
     cudaFree(block_d);
     cudaFree(complete_records_d);
@@ -1573,13 +1574,14 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res){
     printf("total: %ld, allocated: %ld, free: %ld\n", total, allocated, free);
     */
 
-    //printf("utf runtime: %f\n", utf_runtime);
-    //printf("tokenize runtime: %f\n", tokenize_runtime);
-    //printf("last record runtime: %f\n", last_record_runtime);
-    //printf("multi to one runtime: %f\n", multi_to_one_runtime);
-    //printf("parser runtime: %f\n", parser_runtime);
-    //printf("total runtime: %f\n", runtime);
-    
+    printf("utf runtime: %f\n", utf_runtime);
+    printf("tokenize runtime: %f\n", tokenize_runtime);
+    printf("last record runtime: %f\n", last_record_runtime);
+    printf("multi to one runtime: %f\n", multi_to_one_runtime);
+    printf("parser runtime: %f\n", parser_runtime);
+    printf("total runtime: %f\n", runtime);
+    printf("---------------------------------------------------\n");
+    total_runtime += runtime;
 
     return last_index;
 
@@ -1599,14 +1601,15 @@ long *readFile(char* name){
     long  pos = 0;
     long * res;
     FILE * handle;
+    double total_runtime = 0;
     
     // Open source file
     if (!(handle = fopen(name,"rb")))
     {
     // Bail
+        printf("file not found!\n");
         return 0;
     }
-    start_time = clock();
 
     do
     {
@@ -1634,7 +1637,11 @@ long *readFile(char* name){
     // We are also passing bLoopCompleted to let ProcessData know whether this is
     // the last record (in which case - if no end-of-record separator,
     // use eof and process anyway)
-        pos = start(buf, bytesread+sizeLeftover, bLoopCompleted, res);
+        //start_time = clock();
+        pos = start(buf, bytesread+sizeLeftover, bLoopCompleted, res, total_runtime);
+        //end_time = clock();
+        //total_runtime +=  ((double)(end_time-start_time)/CLOCKS_PER_SEC)*1000;
+
 
     // If error occured, bail
         if (pos<1) 
@@ -1671,8 +1678,7 @@ long *readFile(char* name){
         
     } while(!bLoopCompleted);
     // Close file
-    end_time = clock();
-    double total_runtime =  ((double)(end_time-start_time)/CLOCKS_PER_SEC)*1000;
+    
     printf("==================== total runtime ====================\n\t\t\t %f\n\
 ====================      end      ====================\n", total_runtime);
 

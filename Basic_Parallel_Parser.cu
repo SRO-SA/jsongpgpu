@@ -549,7 +549,7 @@ void host_to_device(char ** js, size_t * sizes, const char ** &js_d, size_t * &s
 
 void file_read(char ** &records, size_t * &records_size, int &total_size){
   FILE *fp;
-  fp=fopen("./inputs/All_purpose_base.txt", "r");
+  fp=fopen("./inputs/All_purpose_10000.txt", "r");
   long int lines =0;
 
   if ( fp == NULL ) {

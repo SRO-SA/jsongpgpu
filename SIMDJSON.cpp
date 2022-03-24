@@ -24,7 +24,7 @@ double calcTime(){
     double inttotal = 0;
     int count;
     start = clock();
-    parser.load_many("./inputs/Tokenizetest.txt").get(docs);
+    parser.load_many("./inputs/Tokenizer_many_small.txt").get(docs);
     count = 0;
     for (auto doc : docs) {
         error = doc.error();
