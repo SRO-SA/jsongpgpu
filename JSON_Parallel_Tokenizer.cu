@@ -1658,7 +1658,7 @@ long *readFile(char* name){
         //printf("%ld\n", bytesread+sizeLeftover-pos);
         //printf("%ld\n", sizeof(buf)-MAXLINELENGTH);
         sizeLeftover = bytesread+sizeLeftover-pos;
-        printf("%d\n", sizeLeftover);
+        //printf("%d\n", sizeLeftover);
     // Extra protection - should never happen but you can never be too safe
         if (sizeLeftover<1) sizeLeftover=0;
 
