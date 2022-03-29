@@ -655,7 +655,9 @@ int main(int argc, char **argv)
     cudaMemcpy(p, p_d, sizeof(jsmn_parser)*current_total, cudaMemcpyDeviceToHost);
     //printf("%.*s\n", t_h[(current_total-1)*10000+2].end - t_h[(current_total-1)*10000+2].start, js[current_total-1] + t_h[(current_total-1)*10000+2].start);
     //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
-  
+    cudaFree(p_d);
+    cudaFree(t);
+    cudaFree(error);
 
     total_count += total_allowed;
   }
