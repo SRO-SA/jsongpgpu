@@ -19,8 +19,8 @@
 #include <thrust/transform.h>
 #include <inttypes.h>
 
-#define        MAXLINELENGTH    4194304 // Max record size
-#define        BUFSIZE      4194304
+#define        MAXLINELENGTH    134217728  //4194304  //8388608 33554432 134217728 536870912 1073741824// Max record size
+#define        BUFSIZE       134217728  //4194304 //8388608 33554432 134217728 536870912 1073741824
 
 enum hypothesis_val {in, out, unknown, fail};
 
@@ -1595,7 +1595,7 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
 long *readFile(char* name){
     clock_t start_time, end_time;
     unsigned long  bytesread;
-    uint8_t  buf[BUFSIZE];
+    static uint8_t  buf[BUFSIZE];
     int   sizeLeftover=0;
     int   bLoopCompleted = 0;
     long  pos = 0;

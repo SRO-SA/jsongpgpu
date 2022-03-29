@@ -20,6 +20,7 @@ int print_d(char* input_d, int length){
   input = (char*) malloc(sizeof(char)*length);
   cudaMemcpy(input, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
   printf("%s\n", input);
+  free(input);
   return 1;
 }
 
@@ -616,41 +617,81 @@ int main(int argc, char **argv)
 
   int numBlock = (total_size + BLOCKSIZE - 1) / BLOCKSIZE;
 
-
   host_to_device(js, sizes, js_d, sizes_d, total_size);
 
+  int total_allowed = 2000;
+  int total_count = 0;
+  while(total_count < total_size){
+    int current_total = total_size - total_count > 2000 ? total_allowed : total_size - total_count;
 
-  //printf("%s\n", js[0]);
+    char ** temp = (char **)malloc(sizeof(char*)*current_total);
+    cudaMemcpy(temp, js_d, sizeof(char*)*current_total, cudaMemcpyDeviceToHost);
+  
+  
+    //jsmn_parser *p;
+    jsmn_parser *p_d;
+    jsmn_parser *p = (jsmn_parser *)malloc(sizeof(jsmn_parser)*current_total);
+  
+    cudaMalloc(&p_d, sizeof(jsmn_parser)*current_total);
+    jsmntok_t *t; // We expect no more than 128 JSON tokens
+    jsmntok_t *t_h = (jsmntok_t *)malloc(sizeof(jsmntok_t)*(current_total*10000));
+  
+    start = clock();
+    cudaMalloc(&t, (current_total*10000)*sizeof(jsmntok_t));
+    jsmn_init<<<numBlock, BLOCKSIZE>>>(p_d, (size_t)current_total);
+    cudaDeviceSynchronize();
+  
+    //print_d(*(temp), sizes[0]);
+    int *error;
+    cudaMalloc(&error, sizeof(int)*current_total);
+    jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d+total_count, sizes_d+total_count, t, 10000, current_total, error);
+    cudaDeviceSynchronize();
+    end = clock();
+    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  
+    int *error_h = (int*)malloc(sizeof(int)*current_total);
+    cudaMemcpy(error_h, error, sizeof(int)*current_total, cudaMemcpyDeviceToHost);
+    cudaMemcpy(t_h, t, sizeof(jsmntok_t)*current_total*10000, cudaMemcpyDeviceToHost);
+    cudaMemcpy(p, p_d, sizeof(jsmn_parser)*current_total, cudaMemcpyDeviceToHost);
+    //printf("%.*s\n", t_h[(current_total-1)*10000+2].end - t_h[(current_total-1)*10000+2].start, js[current_total-1] + t_h[(current_total-1)*10000+2].start);
+    //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
+  
+
+    total_count += total_allowed;
+  }
+/*
   char ** temp = (char **)malloc(sizeof(char*)*total_size);
   cudaMemcpy(temp, js_d, sizeof(char*)*total_size, cudaMemcpyDeviceToHost);
+
 
   //jsmn_parser *p;
   jsmn_parser *p_d;
   jsmn_parser *p = (jsmn_parser *)malloc(sizeof(jsmn_parser)*total_size);
 
   cudaMalloc(&p_d, sizeof(jsmn_parser)*total_size);
-  jsmntok_t *t; /* We expect no more than 128 JSON tokens */
-  jsmntok_t *t_h = (jsmntok_t *)malloc(sizeof(jsmntok_t)*(total_size*1000));
+  jsmntok_t *t; // We expect no more than 128 JSON tokens
+  jsmntok_t *t_h = (jsmntok_t *)malloc(sizeof(jsmntok_t)*(total_size*10000));
 
   start = clock();
-  cudaMalloc(&t, (total_size*1000)*sizeof(jsmntok_t));
+  cudaMalloc(&t, (total_size*10000)*sizeof(jsmntok_t));
   jsmn_init<<<numBlock, BLOCKSIZE>>>(p_d, (size_t)total_size);
   cudaDeviceSynchronize();
-  //print_d(temp[0], sizes[0]);
+
+  //print_d(*(temp), sizes[0]);
   int *error;
   cudaMalloc(&error, sizeof(int)*total_size);
-  jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d, sizes_d, t, 1000, total_size, error);
+  jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d, sizes_d, t, 10000, total_size, error);
   cudaDeviceSynchronize();
   end = clock();
   std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
-
   int *error_h = (int*)malloc(sizeof(int)*total_size);
   cudaMemcpy(error_h, error, sizeof(int)*total_size, cudaMemcpyDeviceToHost);
-  cudaMemcpy(t_h, t, sizeof(jsmntok_t)*total_size*1000, cudaMemcpyDeviceToHost);
+  cudaMemcpy(t_h, t, sizeof(jsmntok_t)*total_size*10000, cudaMemcpyDeviceToHost);
   cudaMemcpy(p, p_d, sizeof(jsmn_parser)*total_size, cudaMemcpyDeviceToHost);
-  printf("%.*s\n", t_h[(total_size-1)*1000+2].end - t_h[(total_size-1)*1000+2].start, js[total_size-1] + t_h[(total_size-1)*1000+2].start);
+  printf("%.*s\n", t_h[(total_size-1)*10000+2].end - t_h[(total_size-1)*10000+2].start, js[total_size-1] + t_h[(total_size-1)*10000+2].start);
   //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
-  
+  */
+
   return 0;
 }
