@@ -7,16 +7,16 @@ using namespace simdjson;
 
 int main(){
     double meantime = 0;
-    for (int i=0;i<50;i++){
+    for (int i=0;i<5;i++){
         meantime = meantime + calcTime();
     }
-    std::cout << meantime/50 << std::endl;
+    std::cout << meantime/5 << std::endl;
     return 0;
 }
 
 double calcTime(){
-    simdjson::dom::parser parser;
-    parser.set_max_capacity(4000000000);
+    simdjson::dom::parser parser(4000000000);
+    //parser.set_max_capacity(4000000000);
     dom::document_stream docs;
     time_t start, end;
     time_t pstart, pend;
@@ -24,8 +24,11 @@ double calcTime(){
     double inttotal = 0;
     int count;
     start = clock();
-    parser.load_many("./inputs/Tokenizer_many_small.txt").get(docs);
+    parser.load_many("./../Large-Json/google_map_small_records.json").get(docs);
+    //parser.load_many("./inputs/Tokenizer_long_6000.txt").get(docs);
+    //printf("max_capaacity: %ld\n", parser.max_capacity());
     count = 0;
+    pstart = clock();
     for (auto doc : docs) {
         error = doc.error();
         if (error) {
@@ -43,8 +46,10 @@ double calcTime(){
         }*/
     //std::cout << "HERE" << std::endl;
     }
+    pend = clock();
     end = clock();
-    //std::cout << inttotal << std::endl;
+    std::cout << "loop: " << ((double)(pend-pstart)/CLOCKS_PER_SEC)*1000 << std::endl;
+    std::cout << "total: " << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     return ((double)(end-start)/CLOCKS_PER_SEC)*1000;// - inttotal;
 }

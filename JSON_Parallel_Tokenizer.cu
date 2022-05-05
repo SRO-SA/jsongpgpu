@@ -19,8 +19,8 @@
 #include <thrust/transform.h>
 #include <inttypes.h>
 
-#define        MAXLINELENGTH    134217728  //4194304  //8388608 33554432 134217728 536870912 1073741824// Max record size
-#define        BUFSIZE       134217728  //4194304 //8388608 33554432 134217728 536870912 1073741824
+#define        MAXLINELENGTH    67108864  //4194304  //8388608 33554432 67108864 134217728 536870912 1073741824// Max record size
+#define        BUFSIZE       67108864  //4194304 //8388608 33554432 67108864 134217728 536870912 1073741824
 
 enum hypothesis_val {in, out, unknown, fail};
 
@@ -240,7 +240,8 @@ void parallel_xor(uint32_t *input1, uint32_t *input2, uint32_t* output, uint64_t
                 printf("input1: %d\n", input1[i]);
                 printf("input2: %d\n", input2[i]);
             }*/
-            output[i] = input1[i] ^ input2[i]; 
+            output[i] = input1[i] ^ input2[i];
+            //if(output[i]!=0) printf("index: %d, input1: %d, input2 %d\n", i, input1[i], input2[i]); 
     }
 }
 
@@ -264,15 +265,22 @@ void align_right(uint32_t* permutation_output_d, uint8_t* block_d, uint32_t* pre
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride)
     {
-        //int prev = (i-1)*4;
+        int prev = (i-1)*4;
         int start = i*4;
-        uint32_t dist1 = (((uint32_t)block_d[start] << 24 | (uint32_t)block_d[start+1] << 16) 
-        | (permutation_output_d[i] & 0x0000ffff)) >> shift*8;
-        uint32_t dist2 = (((uint32_t)block_d[start+2] << 24 | (uint32_t)block_d[start+3] << 16) 
-        | ((permutation_output_d[i] & 0xffff0000) >> 16)) >> shift*8;
+        uint64_t dist = i > 0 ? ((uint64_t)((block_d[start+3] << 24) | (block_d[start+2] << 16) | (block_d[start+1] << 8) | (block_d[start])) << 32) |
+                        ((block_d[prev+3] << 24) | (block_d[prev+2] << 16) | (block_d[prev+1] << 8) | (block_d[prev]))
+                        : ((uint64_t)((block_d[start+3] << 24) | (block_d[start+2] << 16) | (block_d[start+1] << 8) | (block_d[start])) << 32) |
+                        (0);
 
+        //if(i==8800) printf("align: %ld\n", dist);
+        //uint32_t dist1 = (((uint32_t)block_d[start] << 16 | (uint32_t)block_d[start+1] << 24)
+        //| (permutation_output_d[i] & 0x0000ffff)) >> shift*8; // ((uint32_t)block_d[start] << 24 | (uint32_t)block_d[start+1] << 16) original
+        //uint32_t dist2 = (((uint32_t)block_d[start+2] << 16 | (uint32_t)block_d[start+3] << 24) 
+        //| ((permutation_output_d[i] & 0xffff0000) >> 16)) >> shift*8; // ((uint32_t)block_d[start+2] << 24 | (uint32_t)block_d[start+3] << 16) original
+
+        
     
-        prev_d[i] = dist1 | (dist2 << 16);
+        prev_d[i] = (uint32_t)(dist >> shift*8);
     }
 
 }
@@ -280,7 +288,7 @@ void align_right(uint32_t* permutation_output_d, uint8_t* block_d, uint32_t* pre
 
 __global__ 
 void is_incomplete(uint8_t* block, uint32_t* prev_incomplete_d, uint64_t size, int total_padded_32){
-    static const uint32_t max_val = (uint32_t)(0b11000000u-1) | (uint32_t)(0b11100000u-1 << 8) | (uint32_t)(0b11110000u-1 << 16) | (uint32_t)(255 << 24);
+    static const uint32_t max_val = (uint32_t)(0b11000000u-1 << 24) | (uint32_t)(0b11100000u-1 << 16) | (uint32_t)(0b11110000u-1 << 8) | (uint32_t)(255);
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride)
@@ -291,9 +299,7 @@ void is_incomplete(uint8_t* block, uint32_t* prev_incomplete_d, uint64_t size, i
         uint32_t val = (uint32_t)block[start] | (uint32_t)(block[start+1] << 8) | (uint32_t)(block[start+2] << 16) | (uint32_t)(block[start+3] << 24);
         prev_incomplete_d[i] = __vsubus4(val, max_val);
         //printf("now %ld\n", i);
-
     }
-
 }
 
 __global__
@@ -304,12 +310,14 @@ void check_incomplete_ascii(uint8_t* block, uint32_t* prev_incomplete_d, uint32_
     {
         //int prev = (i-1)*4;
         int start = i*4;
-        is_ascii_d[i] = (((block[start]&0b10000000) >> 7) 
-                    | ((block[start+1]&0b10000000) >> 6) 
-                    | ((block[start+2]&0b10000000) >> 5) 
+        is_ascii_d[i] = (uint32_t)(((block[start]&0b10000000) >> 7)
+                    | ((block[start+1]&0b10000000) >> 6)
+                    | ((block[start+2]&0b10000000) >> 5)
                     | ((block[start+3]&0b10000000) >> 4)) == 0;
-        if(is_ascii_d[i] && i!=0) is_ascii_d[i] = prev_incomplete_d[i-1];
-        else is_ascii_d[i] = 0;
+        //if(!is_ascii_d[i]) printf("index: %d, is_ascii_d: %d\n", i, is_ascii_d[i]);
+
+        if(is_ascii_d[i] && i!=0) {is_ascii_d[i] = prev_incomplete_d[i-1];}
+        else {is_ascii_d[i] = 0;}
     }
 
 }
@@ -326,17 +334,21 @@ void must_be_2_3_continuation(uint32_t* prev1, uint32_t* prev2, uint32_t* must32
         uint32_t third_subtract_byte = (0b11100000u-1) | (0b11100000u-1) << 8 | (0b11100000u-1) << 16 | (0b11100000u-1) << 24;
         uint32_t fourth_subtract_byte = (0b11110000u-1) | (0b11110000u-1) << 8 | (0b11110000u-1) << 16 | (0b11110000u-1) << 24;
         uint32_t is_third_byte = __vsubus4(prev1[i], third_subtract_byte);
-        uint32_t is_fourth_byte = __vsubus4(prev1[i], fourth_subtract_byte);
-        /*if(i==0){
+        uint32_t is_fourth_byte = __vsubus4(prev2[i], fourth_subtract_byte);
+        /*if(i==8880){
             printf("Third %d\n", is_third_byte);
             printf("Fourth %d\n", is_fourth_byte);
-
         }*/
 
-        uint32_t gt = __vsubus4((is_third_byte | is_fourth_byte), int32_t(0));
-        must32_d[i] = gt == uint8_t(0) ? 0x01010101UL : 0x00000000UL;
+        uint32_t gt = __vsubss4((int32_t)(is_third_byte | is_fourth_byte), int32_t(0));
+        uint8_t gt1 = (int8_t)gt & 0xFF > 0 ? 0xFF : 0;
+        uint8_t gt2 =  (int8_t)(gt >> 8) & 0xFF > 0 ? 0xFF : 0;
+        uint8_t gt3 =  (int8_t)(gt >> 16) & 0xFF > 0 ? 0xFF : 0;
+        uint8_t gt4 =  (int8_t)(gt >> 24) & 0xFF > 0 ? 0xFF : 0;
+
+        must32_d[i] = gt1 | (gt2 << 8) | (gt3 << 16) | (gt4 << 24);
         /*if(i==0){
-            printf("gt: %d\n", gt);
+            printf("gt: %u\n", gt);
         }*/
     }
 }
@@ -378,10 +390,10 @@ void check_special_cases(uint8_t* block_d, uint32_t* prev1_d, uint32_t* sc_d, ui
         // 1111____ ________ <four+ byte lead in byte 1>
         TOO_SHORT | TOO_LARGE | TOO_LARGE_1000 | OVERLONG_4
     };
-    constexpr const uint8_t CARRY = TOO_SHORT | TOO_LONG | TWO_CONTS; // These all have ____ in byte 1 .
+    constexpr const uint8_t CARRY = TOO_SHORT | TOO_LONG | TWO_CONTS; // These all have ____ in byte 1 . 10000011
     uint8_t table2[16] = {
           // ____0000 ________
-          CARRY | OVERLONG_3 | OVERLONG_2 | OVERLONG_4,
+          CARRY | OVERLONG_3 | OVERLONG_2 | OVERLONG_4, //11100111
           // ____0001 ________
           CARRY | OVERLONG_2,
           // ____001_ ________
@@ -430,10 +442,15 @@ void check_special_cases(uint8_t* block_d, uint32_t* prev1_d, uint32_t* sc_d, ui
         //int prev = (i-1)*4;
         int start = i*4;
         uint32_t shr_prev1 = (prev1_d[i] >> 4) & 0x0f0f0f0f;
-        uint8_t shr_prev1_b1 = shr_prev1;
-        uint8_t shr_prev1_b2 = (shr_prev1 >> 8);
-        uint8_t shr_prev1_b3 = (shr_prev1 >> 16);
-        uint8_t shr_prev1_b4 = (shr_prev1 >> 24);
+        //if(i==8880) printf("prev1_d: %u\n", prev1_d[i]);
+
+        //if(i==8880) printf("shr_prev1: %u\n", shr_prev1);
+
+        uint8_t shr_prev1_b1 = shr_prev1 & 0x000000ff;
+        uint8_t shr_prev1_b2 = (shr_prev1 >> 8) & 0x000000ff;
+        uint8_t shr_prev1_b3 = (shr_prev1 >> 16) & 0x000000ff;
+        uint8_t shr_prev1_b4 = (shr_prev1 >> 24) & 0x000000ff;
+
         uint32_t byte_1_high = table1[shr_prev1_b1] | (table1[shr_prev1_b2] << 8) | (table1[shr_prev1_b3] << 16) | (table1[shr_prev1_b4] << 24);
 
         uint32_t shl_prev1 = prev1_d[i] & 0x0f0f0f0f;
@@ -443,6 +460,7 @@ void check_special_cases(uint8_t* block_d, uint32_t* prev1_d, uint32_t* sc_d, ui
          shr_prev1_b4 = (shl_prev1 >> 24);
 
         uint32_t byte_1_low = table2[shr_prev1_b1] | (table2[shr_prev1_b2] << 8) | (table2[shr_prev1_b3] << 16) | (table2[shr_prev1_b4] << 24);
+        //if(i==8880) printf("shl_prev1: %u\n", shl_prev1);
 
         shr_prev1_b1 = (block_d[start] >> 4);
         shr_prev1_b2 = (block_d[start+1] >> 4);
@@ -450,11 +468,30 @@ void check_special_cases(uint8_t* block_d, uint32_t* prev1_d, uint32_t* sc_d, ui
         shr_prev1_b4 = (block_d[start+3] >> 4);
 
         uint32_t byte_2_high = table3[shr_prev1_b1] | (table3[shr_prev1_b2] << 8) | (table3[shr_prev1_b3] << 16) | (table3[shr_prev1_b4] << 24);
-
         sc_d[i] =   (byte_1_high & byte_1_low & byte_2_high);
+        //if(i==8880) printf("8880: %d, byte_1_high: %u, byte_1_low: %u, byte_2_high: %u\n", sc_d[i], byte_1_high, byte_1_low, byte_2_high);
+        //if(i==8880) printf("prev[start+3]: %d, block[start]: %u, block[start+1]: %c, block[start+2]: %c, block[start+3]: %c\n",
+        //             block_d[(i-1)*4+3], block_d[start], block_d[start+1], block_d[start+2], block_d[start+3]);
+        // 00000000 01110010 00000000 00100000 prev1
+        // 00000000 00000111 00000000 00000010 shr
+        // 00000000 00000010 00000000 00000000 shl
+
+        // 00000010 00000010 00000010 00000010
+        // 11100111 10000011 11100111 11100111
+        // 00000001 00000001 00000001 10111010
+
+        //------------------------------------
+        // 00000000 01000011 00000000 10101001 prev1
+        // 00000000 00000100 00000000 00001010 shr
+        // 00000000 00000011 00000000 00001001 shl
+
+        // 00000010 00000010 00000010 10000000
+        // 11100111 10000011 11100111 11001011
+        // 00000001 00000001 00000001 10111010
     }
 
 }
+
 
 
 uint8_t prefix_or(uint32_t* is_ascii_d, uint64_t size, int total_padded_32){
@@ -465,8 +502,6 @@ uint8_t prefix_or(uint32_t* is_ascii_d, uint64_t size, int total_padded_32){
     //printf("error %d\n", error);
 
     return (uint8_t)error;
-
-
 }
   
 
@@ -485,21 +520,19 @@ bool UTF8Validate(uint8_t * block_d, uint64_t size){
     is_incomplete<<<numBlock, BLOCKSIZE>>>(block_d, prev_incomplete_d, size, total_padded_32);
     cudaDeviceSynchronize();
 
-
     //print_d(prev_incomplete_d, total_padded_32, ROW1);
 
     check_incomplete_ascii<<<numBlock, BLOCKSIZE>>>(block_d, prev_incomplete_d, is_ascii_d, size, total_padded_32);
     cudaDeviceSynchronize();
 
-    //printf("FDFDFDFD\n");
+
+
 
     uint8_t error = prefix_or(is_ascii_d, size, total_padded_32);
 
     //printf("error %d\n", error);
 
     //std::cout << "HERE" << std::endl;
-
-
 
     if(error != 0){ printf("Incomplete ASCII!\n"); return false;}
 
@@ -554,10 +587,19 @@ bool UTF8Validate(uint8_t * block_d, uint64_t size){
     //printf("must32_80_d\n");
     //print_d(must32_80_d, total_padded_32, ROW1);
     cudaFree(must32_d);
-
+    uint32_t test_value;
+    cudaMemcpy(&test_value, must32_80_d+8880, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    //printf("must32_80: %u\n", test_value);
+    cudaMemcpy(&test_value, sc_d+8880, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    //printf("sc_d: %d\n", test_value);
 
     parallel_xor<<<numBlock, BLOCKSIZE>>>(must32_80_d, sc_d, must32_80_sc_d, size, total_padded_32);
     cudaDeviceSynchronize();
+
+    cudaMemcpy(&test_value, must32_80_sc_d+8880, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    //printf("must32_80_sc_d: %u\n", test_value);
+
+
     cudaFree(must32_80_d);
     cudaFree(sc_d);
 
@@ -864,7 +906,7 @@ void classify(uint8_t* block_d, uint32_t* op_d, uint32_t* whitespace_d, uint64_t
                     ) ? 1 : 0) << (j-start)) ;
             res_wt |= (((block_d[j] == ' ' ||
                     block_d[j] == '\t' ||
-                    block_d[j] == '\n' ||
+                    //block_d[j] == '\n' ||
                     block_d[j] == '\r'
                     ) ? 1 : 0) << (j-start)) ;
         }
@@ -935,7 +977,7 @@ void assign_open_close(uint8_t* block_d, uint32_t* open_d, uint32_t* close_d, in
 }
 
 __global__
-void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res_d, uint32_t res_size, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
+void parallel_copy(uint8_t* tokens_d, uint8_t* res_d, uint32_t res_size, uint32_t last_index_tokens){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(uint32_t i = index; i< last_index_tokens; i+=stride)
@@ -966,6 +1008,7 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res
 
         }
         */
+        /*
         uint32_t* j_pointer;
         //thrust::device_ptr<uint32_t> thrust_complete_records_d = thrust::device_pointer_cast(complete_records_d);
 
@@ -977,28 +1020,34 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* complete_records_d, uint8_t* res
         
         ptrdiff_t j_index = (j_pointer - complete_records_d);
 
-        /*printf("i: %d, *j_pointer: %d, j_pointer: %p, complete_records: %p, j_index: %ld,\n",
-                i,
-                j_pointer[0],
-                j_pointer,
-                complete_records_d,
-                j_index);
+        //printf("i: %d, *j_pointer: %d, j_pointer: %p, complete_records: %p, j_index: %ld,\n",
+        //        i,
+        //        j_pointer[0],
+        //        j_pointer,
+        //        complete_records_d,
+        //        j_index);
 
-            */
+            
         uint32_t j = j_index == 0 ? i : i - (*(j_pointer-1)+1);
         uint32_t start = j_index==0 ? 0 : *(j_pointer-1);
         uint32_t res_start = j_index==0 ? 1 : *(j_pointer-1)+j_index + 2;
         res_d[res_start+j] = tokens_d[i];
-        if(i== *(j_pointer) && i<last_index_tokens-1) res_d[res_start+j+1] = ','; //why shifted twice?
+        if(i<last_index_tokens-1 && res_start+j < res_size-4 && tokens_d[i] == '\n') res_d[res_start+j] = ','; //why shifted twice?
+        */
         if(i == 0){
             res_d[0] = '[';
             res_d[res_size-2] = ']';
             res_d[res_size-1] = ',';
         }
+        res_d[i+1] = tokens_d[i];
+        if(tokens_d[i] == '\n' & i < last_index_tokens - 1) res_d[i+1] = ',';
+        
+
+        
     }
 }
 
-uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_string_8_out_d){
+uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_string_8_out_d, uint32_t &last_index_tokens){
     int total_padded_32 = (size+31)/32 ;
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
     uint32_t* backslashes_d;
@@ -1295,14 +1344,33 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     cudaMalloc(&filtered_string_8_d, sum*sizeof(uint8_t));
 
     thrust::copy_if(thrust::cuda::par, in_string_8_d, in_string_8_d+size, filtered_string_8_d, not_zero());
-    //in_string_out_d = (uint8_t* )malloc(sizeof(uint8_t)*sum);
+
+    uint8_t* in_string_out;
+    in_string_out = (uint8_t* )malloc(sum*sizeof(uint8_t));
+    //in_string_out[0] = 'A';
+
+    //cudaMemcpy(in_string_out, filtered_string_8_d, sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
+    //printf("filtered: %c\n", in_string_out[0]);
 
     //print8(in_string_8, size, ROW1);
-    //cudaMemcpy(in_string_out_d, filtered_string_8_d, sizeof(uint8_t)*sum, cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(in_string_out, filtered_string_8_d, sizeof(uint8_t)*sum, cudaMemcpyDeviceToHost);
+
+    int total_line = 0;
+    int line_length = 0;
+    for(int i=0; i<sum; i++){
+        if(in_string_out[i] == '\n'){
+            line_length++;
+            total_line++;
+        }
+        else line_length++;
+    }
+    last_index_tokens = line_length;
+    //printf("last_index3: %d, open_close_size3: %d\n", line_length, total_line);
+    free(in_string_out);
     in_string_out_d = filtered_string_8_d;
     ret_size = sum;
-    //printf("%d\n", ret_size);
-    //print8(in_string, sum, ROW1);
 
     return in_string_out_d;
 }
@@ -1310,6 +1378,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
 
 uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint32_t& open_close_reduced_size){
     clock_t start, end;
+    double time = 0;
     
     uint32_t* open_d;
     uint32_t* close_d;
@@ -1341,26 +1410,38 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     cudaMalloc(&open_count_32_d, total_padded_32_div_32*sizeof(uint32_t));
     cudaMalloc(&close_count_32_d, total_padded_32_div_32*sizeof(uint32_t));
 
+    start = clock();
     assign_open_close<<<numBlock, BLOCKSIZE>>>(block_d, open_d, close_d,  size, total_padded_32);
     cudaDeviceSynchronize();
+    end = clock();
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+
+    printf("assign time: %f\n", time);
 
     //print8_d<uint8_t>(block_d, size, ROW1);
     //print_d(open_d, total_padded_32, ROW1);
     //print_d(close_d, total_padded_32, ROW1);
 
-
-
+    start = clock();
     sum_ones<<<smallNumBlock, BLOCKSIZE>>>(open_d, open_count_d, open_count_32_d, size, total_padded_32, total_padded_32_div_32);
-    cudaDeviceSynchronize();
     sum_ones<<<smallNumBlock, BLOCKSIZE>>>(close_d, close_count_d, close_count_32_d, size, total_padded_32, total_padded_32_div_32);
     cudaDeviceSynchronize();
+    end = clock();
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    printf("sum time: %f\n", time);
+
 
     //print_d(open_count_d, total_padded_32, ROW1);
     //print_d(close_count_d, total_padded_32, ROW1);
 
+    start = clock();
 
     thrust::exclusive_scan(thrust::cuda::par, open_count_32_d, open_count_32_d+total_padded_32_div_32, open_count_32_d);
     thrust::exclusive_scan(thrust::cuda::par, close_count_32_d, close_count_32_d+total_padded_32_div_32, close_count_32_d);
+
+    end = clock();
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    printf("prefix time: %f\n", time);
 
     //print_d(open_count_32_d, total_padded_32_div_32, ROW1);
     //print_d(close_count_32_d, total_padded_32_div_32, ROW1);
@@ -1369,8 +1450,15 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     cudaMalloc(&open_prefix_sum_d, total_padded_32*sizeof(uint32_t));
     cudaMalloc(&close_prefix_sum_d, total_padded_32*sizeof(uint32_t));
 
+    start = clock();
+
     scatter<<<smallNumBlock, BLOCKSIZE>>>(open_count_32_d, open_count_d, open_prefix_sum_d, total_padded_32_div_32, total_padded_32);
     scatter<<<smallNumBlock, BLOCKSIZE>>>(close_count_32_d, close_count_d, close_prefix_sum_d, total_padded_32_div_32, total_padded_32);
+    cudaDeviceSynchronize();
+    end = clock();
+
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    printf("scatter time: %f\n", time);
 
     //print_d(open_prefix_sum_d, total_padded_32, ROW1);
     //print_d(close_prefix_sum_d, total_padded_32, ROW1);
@@ -1386,10 +1474,16 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     cudaMalloc(&open_block, size*sizeof(uint32_t));
     cudaMalloc(&close_block, size*sizeof(uint32_t));
 
+    start = clock();
 
     scatter_block<<<numBlock, BLOCKSIZE>>>(open_prefix_sum_d, open_d, open_block, total_padded_32, size);
     scatter_block<<<numBlock, BLOCKSIZE>>>(close_prefix_sum_d, close_d, close_block, total_padded_32, size);
-    
+    cudaDeviceSynchronize();
+
+    end = clock();
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    printf("scatter block time: %f\n", time);
+
     //print_d(open_block, size, ROW1);
     //print_d(close_block, size, ROW1);
     cudaFree(open_d);
@@ -1441,18 +1535,18 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     //printf("%d\n", last_index);
     //last_index = open_close_reduced_d[sum_zero-1];
     //printf("DFSFDSFSD\n");
-
+    printf("*************************************\n");
     return open_close_reduced_out_d;
 }
 
 
-uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t* complete_records_d, uint32_t ret_size, uint32_t last_index_tokens, uint32_t open_close_reduced_size_tokens){
+uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t last_index_tokens){
     clock_t start, end;
     start = clock();
 
     int numBlock = ((last_index_tokens) + BLOCKSIZE - 1) / BLOCKSIZE;
 
-    uint32_t res_size = last_index_tokens+open_close_reduced_size_tokens+2;
+    uint32_t res_size = last_index_tokens+3;
     //uint8_t* res = (uint8_t*)malloc(sizeof(uint32_t)*(res_size));
     uint8_t* res_d;
     cudaMalloc(&res_d, sizeof(uint8_t)*res_size);
@@ -1469,8 +1563,7 @@ uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t* complete_records_d, u
     //printf("%d\n", ret_size);
     //printf("%d\n", res_size);
 
-    
-    parallel_copy<<<numBlock, BLOCKSIZE>>>(tokens_d, complete_records_d, res_d, res_size, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    parallel_copy<<<numBlock, BLOCKSIZE>>>(tokens_d, res_d, res_size, last_index_tokens);
     
     cudaDeviceSynchronize();
 
@@ -1513,33 +1606,35 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
         exit(0);
     }
 
+    //uint32_t* complete_records;
+    uint32_t last_index_tokens;
+    //uint32_t open_close_reduced_size_tokens;
+
     start = clock();
     int ret_size = 0;
     //TODO Pass everything between blocks. in string, 
     uint8_t* in_string_8_d;
-    tokens_d = Tokenize(block_d, size, ret_size, in_string_8_d);
+    tokens_d = Tokenize(block_d, size, ret_size, in_string_8_d, last_index_tokens);
     end = clock();
     tokenize_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    uint32_t* complete_records_d;
     uint32_t last_index;
-    uint32_t last_index_tokens;
-    uint32_t open_close_reduced_size_tokens;
     uint32_t open_close_reduced_size;
+
 
     //print8_d<uint8_t>(in_string_8_d, size, ROW1);
 
     start = clock();
-    complete_records_d = get_last_record(tokens_d, ret_size, last_index_tokens, open_close_reduced_size_tokens);
-    //printf("ssssssssss\n");
-    get_last_record(in_string_8_d, size, last_index, open_close_reduced_size);
+
+    //printf("last_index2: %d\n", last_index_tokens);       // is it possible?
+
     end = clock();
     last_record_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
 
     uint32_t* parser_input;
 
     start = clock();
-    int all_in_one_size = last_index_tokens+open_close_reduced_size_tokens+2;
-    uint8_t* all_in_one_d =  multi_to_one_record(tokens_d, complete_records_d, ret_size, last_index_tokens, open_close_reduced_size_tokens);
+    int all_in_one_size = last_index_tokens+3;
+    uint8_t* all_in_one_d =  multi_to_one_record(tokens_d, last_index_tokens);
     end = clock();
     multi_to_one_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
 
@@ -1563,7 +1658,7 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     cudaDeviceSynchronize();
     cudaFree(tokens_d);
     cudaFree(block_d);
-    cudaFree(complete_records_d);
+    //cudaFree(complete_records_d);
     cudaFree(all_in_one_d);
     cudaFree(in_string_8_d);
 
@@ -1588,7 +1683,67 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     //return 0; //For now
 }
 
+long * readFilebyLine(char* name){
+    clock_t start_time, end_time;
+    unsigned long  bytesread;
+    static uint8_t  buf[BUFSIZE];
+    int   sizeLeftover=0;
+    int   bLoopCompleted = 0;
+    long  pos = 0;
+    long * res;
+    FILE * handle;
+    double total_runtime = 0;
 
+    ssize_t read;
+    uint8_t * line = NULL;
+    size_t len = 0;
+    uint32_t total = 0;
+    uint32_t lines = 0;
+    uint32_t lineLengths[1<<20];
+    int i = 0;
+
+
+    // Open source file
+    if (!(handle = fopen(name,"rb")))
+    {
+    // Bail
+        printf("file not found!\n");
+        return 0;
+    }
+
+    while((read = getline((char **)&line, &len, handle)) != -1){
+        //printf("DSDSDSD\n");
+
+        if(total+read > BUFSIZE){
+            start(buf, total, bLoopCompleted, res, total_runtime);
+            total = 0;
+            i = 0;
+            memcpy(buf+total, line, sizeof(uint8_t)*read);
+            lineLengths[i] = read;
+            total = read; //Reset
+        }
+        else{
+            memcpy(buf+total, line, sizeof(uint8_t)*read);
+            total += read;
+            lineLengths[i] = total;
+
+        }
+        i++;
+
+    }
+    if(total > 0){
+        //print8(buf, total, ROW1);
+        start(buf, total, bLoopCompleted, res, total_runtime);
+    }
+    total = 0;
+    
+    printf("==================== total runtime ====================\n\t\t\t %f\n\
+====================      end      ====================\n", total_runtime);
+
+    fclose(handle);
+    return res;
+ 
+}
 
 
 
@@ -1617,7 +1772,7 @@ long *readFile(char* name){
     // Read next block from file and save into buf, right after the
     // "left over" buffer
         bytesread = fread(buf+sizeLeftover, 1, sizeof(buf)-1-sizeLeftover, handle);
-        if (bytesread<1)     
+        if (bytesread<1)
         {
             // Turn on 'loop completed' flag so that we know to exit at the bottom
             // Still need to process any block we currently have in the
@@ -1638,7 +1793,7 @@ long *readFile(char* name){
     // the last record (in which case - if no end-of-record separator,
     // use eof and process anyway)
         //start_time = clock();
-        pos = start(buf, bytesread+sizeLeftover, bLoopCompleted, res, total_runtime);
+        pos = 0; //start(buf, bytesread+sizeLeftover, bLoopCompleted, res, total_runtime);
         //end_time = clock();
         //total_runtime +=  ((double)(end_time-start_time)/CLOCKS_PER_SEC)*1000;
 
@@ -1694,7 +1849,8 @@ int main(int argc, char **argv)
   if (argv[1] != NULL){
     if( strcmp(argv[1], "-b") == 0 && argv[2] != NULL){
       std::cout << "Batch mode..." << std::endl;
-      result = readFile(argv[2]);
+      //result = readFile(argv[2]);
+      result = readFilebyLine(argv[2]);
     }
     else std::cout << "Command should be like '-b[file path]'" << std::endl;
   }

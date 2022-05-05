@@ -548,13 +548,13 @@ void host_to_device(char ** js, size_t * sizes, const char ** &js_d, size_t * &s
 
 }
 
-void file_read(char ** &records, size_t * &records_size, int &total_size){
+uint64_t file_read(char ** &records, size_t * &records_size, int &total_size){
   FILE *fp;
-  fp=fopen("./inputs/All_purpose_10000.txt", "r");
+  fp=fopen("./../Large-Json/walmart_small_records.json", "r");
   long int lines =0;
 
   if ( fp == NULL ) {
-    return;
+    return 0;
   }
 
   while (EOF != (fscanf(fp, "%*[^\n]"), fscanf(fp,"%*c")))
@@ -576,8 +576,9 @@ void file_read(char ** &records, size_t * &records_size, int &total_size){
       exit(EXIT_FAILURE);
 
   int i=0;
+  uint64_t read_byte_size = 0;
   while ((read = getline(&line, &len, fp)) != -1) {
-
+      read_byte_size += read;
       //printf("Retrieved line of length %zu:\n", read);
       //printf("%s", line);
       records[i] = (char *)malloc(sizeof(char)* read);
@@ -597,7 +598,7 @@ void file_read(char ** &records, size_t * &records_size, int &total_size){
   
   fclose(fp);
 
-  return;
+  return read_byte_size;
 }
 
 int main(int argc, char **argv)
@@ -610,22 +611,27 @@ int main(int argc, char **argv)
   size_t * sizes;
   int total_size;
 
-  file_read(js, sizes, total_size);
+  uint64_t read_byte_size = file_read(js, sizes, total_size);
+  double line_average_size = read_byte_size/total_size;
+  uint32_t lines_to_parse = 8388608/line_average_size; 
+  //32768 65536 131072 262144 524288 1048576 2097152 4194304 8388608 33554432 134217728 536870912 1073741824
 
   const char **js_d;
   size_t * sizes_d;
 
-  int numBlock = (total_size + BLOCKSIZE - 1) / BLOCKSIZE;
+  int numBlock = (lines_to_parse + BLOCKSIZE - 1) / BLOCKSIZE;
 
   host_to_device(js, sizes, js_d, sizes_d, total_size);
 
-  int total_allowed = 2000;
+  int total_allowed = lines_to_parse;
   int total_count = 0;
+  double total_time = 0;
   while(total_count < total_size){
-    int current_total = total_size - total_count > 2000 ? total_allowed : total_size - total_count;
+    int current_total = total_size - total_count > lines_to_parse ? total_allowed : total_size - total_count;
 
-    char ** temp = (char **)malloc(sizeof(char*)*current_total);
-    cudaMemcpy(temp, js_d, sizeof(char*)*current_total, cudaMemcpyDeviceToHost);
+    double iteration_time = 0;
+    //char ** temp = (char **)malloc(sizeof(char*)*current_total);
+    //cudaMemcpy(temp, js_d, sizeof(char*)*current_total, cudaMemcpyDeviceToHost);
   
   
     //jsmn_parser *p;
@@ -636,6 +642,7 @@ int main(int argc, char **argv)
     jsmntok_t *t; // We expect no more than 128 JSON tokens
     jsmntok_t *t_h = (jsmntok_t *)malloc(sizeof(jsmntok_t)*(current_total*10000));
   
+    printf("fdsfsfsd\n");
     start = clock();
     cudaMalloc(&t, (current_total*10000)*sizeof(jsmntok_t));
     jsmn_init<<<numBlock, BLOCKSIZE>>>(p_d, (size_t)current_total);
@@ -647,7 +654,9 @@ int main(int argc, char **argv)
     jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d+total_count, sizes_d+total_count, t, 10000, current_total, error);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    iteration_time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    total_time += iteration_time;
+    std::cout << "Time elapsed: " << std::setprecision (17) << iteration_time << std::endl;
   
     int *error_h = (int*)malloc(sizeof(int)*current_total);
     cudaMemcpy(error_h, error, sizeof(int)*current_total, cudaMemcpyDeviceToHost);
@@ -655,13 +664,19 @@ int main(int argc, char **argv)
     cudaMemcpy(p, p_d, sizeof(jsmn_parser)*current_total, cudaMemcpyDeviceToHost);
     //printf("%.*s\n", t_h[(current_total-1)*10000+2].end - t_h[(current_total-1)*10000+2].start, js[current_total-1] + t_h[(current_total-1)*10000+2].start);
     //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
+    free(error_h);
+    free(t_h);
+    free(p);
     cudaFree(p_d);
     cudaFree(t);
     cudaFree(error);
 
+
     total_count += total_allowed;
+    //break;
   }
-/*
+
+  /*
   char ** temp = (char **)malloc(sizeof(char*)*total_size);
   cudaMemcpy(temp, js_d, sizeof(char*)*total_size, cudaMemcpyDeviceToHost);
 
@@ -694,6 +709,6 @@ int main(int argc, char **argv)
   printf("%.*s\n", t_h[(total_size-1)*10000+2].end - t_h[(total_size-1)*10000+2].start, js[total_size-1] + t_h[(total_size-1)*10000+2].start);
   //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
   */
-
+  printf("----------------------------------\n total time: %f \n-------------------------------\n", total_time);
   return 0;
 }
