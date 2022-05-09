@@ -402,21 +402,40 @@ void set_open_odd_close_even(char* input_d, uint32_t* o_o_c_e, uint32_t* o_e_c_o
   }
 }
 
-bool matching(char *input_d, int length, int iter, int numBlock){
-  bool matched = true;
-  if(length < 3 || iter == 1){
-    char * res_check = (char *)malloc(sizeof(char)*length);
-    cudaMemcpy(res_check, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
-    for(int i = 0; i< length; i+=2){
-      uint8_t sixth_bit_i = (res_check[i] >> 5) & 1;
-      uint8_t second_bit_i = (res_check[i] >> 1) & 1;
-      uint8_t sixth_bit_i_1 = (res_check[i+1] >> 5) & 1;
-      uint8_t second_bit_i_1 = (res_check[i+1] >> 1) & 1; 
+__global__
+void check_is_matched(char* input_d, int length, bool matched){
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(long i=index; i<length; i+=stride){
+    char currentChar = input_d[i*2];
+    char nextChar = input_d[i*2+1];
+      uint8_t sixth_bit_i = (currentChar >> 5) & 1;
+      uint8_t second_bit_i = (currentChar >> 1) & 1;
+      uint8_t sixth_bit_i_1 = (nextChar >> 5) & 1;
+      uint8_t second_bit_i_1 = (nextChar >> 1) & 1; 
 
       matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);    
 
-    }
-    free(res_check);
+  }
+}
+
+
+bool matching(char *input_d, int length, int iter, int numBlock){
+  bool matched = true;
+  if(length < 3 || iter == 1){
+    check_is_matched<<<numBlock/2, BLOCKSIZE>>>(input_d, length/2, matched);
+    // char * res_check = (char *)malloc(sizeof(char)*length);
+    // cudaMemcpy(res_check, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+    // for(int i = 0; i< length; i+=2){
+    //   uint8_t sixth_bit_i = (res_check[i] >> 5) & 1;
+    //   uint8_t second_bit_i = (res_check[i] >> 1) & 1;
+    //   uint8_t sixth_bit_i_1 = (res_check[i+1] >> 5) & 1;
+    //   uint8_t second_bit_i_1 = (res_check[i+1] >> 1) & 1; 
+
+    //   matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);    
+
+    // }
+    // free(res_check);
 
     // if(!matched){
     //   std::cout << "-------------Curretness "<< iter << " Step--------------" << std::endl;
@@ -453,18 +472,20 @@ bool matching(char *input_d, int length, int iter, int numBlock){
   // printf("right: %d\n", right_length);
 
   if(left_length == 0 || right_length == 0){
-    char * res_check = (char *)malloc(sizeof(char)*length);
-    cudaMemcpy(res_check, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
-    for(int i = 0; i< length; i+=2){
-      uint8_t sixth_bit_i = (res_check[i] >> 5) & 1;
-      uint8_t second_bit_i = (res_check[i] >> 1) & 1;
-      uint8_t sixth_bit_i_1 = (res_check[i+1] >> 5) & 1;
-      uint8_t second_bit_i_1 = (res_check[i+1] >> 1) & 1; 
 
-      matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);
+    check_is_matched<<<numBlock/2, BLOCKSIZE>>>(input_d, length/2, matched);
+    // char * res_check = (char *)malloc(sizeof(char)*length);
+    // cudaMemcpy(res_check, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+    // for(int i = 0; i< length; i+=2){
+    //   uint8_t sixth_bit_i = (res_check[i] >> 5) & 1;
+    //   uint8_t second_bit_i = (res_check[i] >> 1) & 1;
+    //   uint8_t sixth_bit_i_1 = (res_check[i+1] >> 5) & 1;
+    //   uint8_t second_bit_i_1 = (res_check[i+1] >> 1) & 1; 
 
-    }
-    free(res_check);
+    //   matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);
+
+    // }
+    // free(res_check);
     // if(!matched){
     //   std::cout << "-------------Curretness "<< iter << " Step--------------" << std::endl;
     //   //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
