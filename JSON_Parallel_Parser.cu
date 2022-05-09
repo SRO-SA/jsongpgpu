@@ -174,24 +174,35 @@ void inv(long length, long * arr, long * res){
 
 long *sort(int length, int numBlock, long * arr)
 {
-  //clock_t start, end;
+  clock_t start, end;
+  double total = 0;
   long* cudaArr;
+  start = clock();
   cudaMalloc(&cudaArr, length*ROW2*sizeof(long));
   cudaMemcpy(cudaArr, arr, length*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
   thrust::device_ptr<long> devArr(cudaArr);
-  //start = clock();
+  end = clock();
+
+  total = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+  printf("allocation time: %f\n", total);
+
+  start = clock();
   thrust::stable_sort_by_key(thrust::cuda::par, cudaArr, cudaArr+length, cudaArr+length);
-  //end = clock();
-  //double total = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //printf("sort time: %f\n", total);
+  end = clock();
+
+  total = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+  printf("sort time: %f\n", total);
+
   long *res;
   cudaMalloc(&res, length*ROW1*sizeof(long));
-  //start = clock();
+  start = clock();
   inv<<<numBlock, BLOCKSIZE>>>(length, cudaArr, res);
   cudaDeviceSynchronize();
-  //end = clock();
-  //total = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  //printf("inverse time: %f\n", total);
+  end = clock();
+
+  total = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+  printf("inverse time: %f\n", total);
+  
   cudaFree(cudaArr);
   return res;
 }
@@ -855,13 +866,13 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
   cudaFree(d_attacheArr);
   end = clock();
   step1 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  // std::cout << "-------------First Step--------------" << std::endl;
-  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  // // h_char_test = (char*)malloc(sizeof(char)*attachedLength);
-  // // cudaMemcpy(h_char_test, d_sameDepthArr, sizeof(char)*attachedLength, cudaMemcpyDeviceToHost);
-  // // printString(h_char_test, attachedLength, ROW1);
-  // // free(h_char_test);
-  // std::cout << "-------------End First Step--------------" << std::endl;
+  std::cout << "-------------First Step--------------" << std::endl;
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_char_test = (char*)malloc(sizeof(char)*attachedLength);
+  // cudaMemcpy(h_char_test, d_sameDepthArr, sizeof(char)*attachedLength, cudaMemcpyDeviceToHost);
+  // printString(h_char_test, attachedLength, ROW1);
+  // free(h_char_test);
+  std::cout << "-------------End First Step--------------" << std::endl;
 
   start = clock();
   long *d_arr;
@@ -869,13 +880,13 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
   correctDepth = findDepthAndCount(attachedLength, numBlock, &d_arr, d_sameDepthArr);
   end = clock();
   step2 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-  // std::cout << "-------------Second Step--------------" << std::endl;
-  // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-  // // h_long_test = (long*)malloc(sizeof(long)*attachedLength*ROW3);
-  // // cudaMemcpy(h_long_test, d_arr, sizeof(long)*attachedLength*ROW3, cudaMemcpyDeviceToHost);
-  // // print(h_long_test, attachedLength, ROW3);
-  // // free(h_long_test);
-  // std::cout << "-------------End Second Step--------------" << std::endl;
+  std::cout << "-------------Second Step--------------" << std::endl;
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (long*)malloc(sizeof(long)*attachedLength*ROW3);
+  // cudaMemcpy(h_long_test, d_arr, sizeof(long)*attachedLength*ROW3, cudaMemcpyDeviceToHost);
+  // print(h_long_test, attachedLength, ROW3);
+  // free(h_long_test);
+  std::cout << "-------------End Second Step--------------" << std::endl;
   long arrLength;
   cudaMemcpy(&arrLength, d_arr+(attachedLength-1), sizeof(long), cudaMemcpyDeviceToHost);
   if(correctDepth != -1){
@@ -890,13 +901,13 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       cudaDeviceSynchronize();
       end = clock();
       step3 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Third Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW2);
-      // // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
-      // // print(h_long_test, arrLength, ROW2);
-      // // free(h_long_test);
-      // std::cout << "-------------End Third Step--------------" << std::endl;
+      std::cout << "-------------Third Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW2);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW2);
+      // free(h_long_test);
+      std::cout << "-------------End Third Step--------------" << std::endl;
       cudaFree(d_sameDepthArr);
       cudaFree(d_arr);
       int numBlock = (arrLength + BLOCKSIZE - 1) / BLOCKSIZE;
@@ -906,13 +917,13 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       fakeRes = sortByDepth(arrLength, numBlock, arr);
       end = clock();
       step4 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Fourth Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // // h_long_test = (long *)malloc(sizeof(long)*arrLength*ROW2);
-      // // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
-      // // print(h_long_test, arrLength, ROW2);
-      // // free(h_long_test);
-      // std::cout << "-------------End Fourth Step--------------" << std::endl;
+      std::cout << "-------------Fourth Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long *)malloc(sizeof(long)*arrLength*ROW2);
+      // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW2);
+      // free(h_long_test);
+      std::cout << "-------------End Fourth Step--------------" << std::endl;
 
       start = clock();
       cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
@@ -922,26 +933,26 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       cudaDeviceSynchronize();
       end = clock();
       step5 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Fifth Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW1);
-      // // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW1, cudaMemcpyDeviceToHost);
-      // // print(h_long_test, arrLength, ROW1);
-      // // free(h_long_test);
-      // std::cout << "-------------End Fifth Step--------------" << std::endl;
+      std::cout << "-------------Fifth Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW1);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW1, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW1);
+      // free(h_long_test);
+      std::cout << "-------------End Fifth Step--------------" << std::endl;
       
       start = clock();
       cudaMemcpy(arr, res,  arrLength*ROW1*sizeof(long), cudaMemcpyDeviceToDevice);
       fakeRes = propagateParentsAndCountChildren(arrLength, numBlock, arr);
       end = clock();
       step6 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Sixth Step--------------" << std::endl;      
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // //  h_long_test = (long*)malloc(sizeof(long)*arrLength*ROW2);
-      // //  cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
-      // //  print(h_long_test, arrLength, ROW2);
-      // //  free(h_long_test);
-      // std::cout << "-------------End Sixth Step--------------" << std::endl;
+      std::cout << "-------------Sixth Step--------------" << std::endl;      
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      //  h_long_test = (long*)malloc(sizeof(long)*arrLength*ROW2);
+      //  cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      //  print(h_long_test, arrLength, ROW2);
+      //  free(h_long_test);
+      std::cout << "-------------End Sixth Step--------------" << std::endl;
 
       start = clock();
       cudaMemcpy(arr, fakeRes,  arrLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
@@ -951,26 +962,26 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       cudaDeviceSynchronize();
       end = clock();
       step7 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Seventh Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW3);
-      // // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW3, cudaMemcpyDeviceToHost);
-      // // print(h_long_test, arrLength, ROW3);
-      // // free(h_long_test);
-      // std::cout << "-------------End Seventh Step--------------" << std::endl;
+      std::cout << "-------------Seventh Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW3);
+      // cudaMemcpy(h_long_test, res, sizeof(long)*arrLength*ROW3, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW3);
+      // free(h_long_test);
+      std::cout << "-------------End Seventh Step--------------" << std::endl;
       
       start = clock();
       cudaMemcpy(arr, res,  arrLength*ROW3*sizeof(long), cudaMemcpyDeviceToDevice);
       fakeRes = allocate(arrLength, numBlock, arr);
       end = clock();
       step8 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Eighth Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW4);
-      // // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW4, cudaMemcpyDeviceToHost);
-      // // print(h_long_test, arrLength, ROW4);
-      // // free(h_long_test);
-      // std::cout << "-------------End Eighth Step--------------" << std::endl;
+      std::cout << "-------------Eighth Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW4);
+      // cudaMemcpy(h_long_test, fakeRes, sizeof(long)*arrLength*ROW4, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW4);
+      // free(h_long_test);
+      std::cout << "-------------End Eighth Step--------------" << std::endl;
 
       long* sumRes;
       //cudaMalloc(&sumRes, arrLength*ROW1*sizeof(long));
@@ -978,13 +989,13 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       sumRes = scan(arrLength, fakeRes);
       end = clock();
       scanStep += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Scan Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW1);
-      // // cudaMemcpy(h_long_test, sumRes, sizeof(long)*arrLength*ROW1, cudaMemcpyDeviceToHost);
-      // // print(h_long_test, arrLength, ROW1);
-      // // free(h_long_test);
-      // std::cout << "-------------End Scan Step--------------" << std::endl;
+      std::cout << "-------------Scan Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      // h_long_test = (long*) malloc(sizeof(long)*arrLength*ROW1);
+      // cudaMemcpy(h_long_test, sumRes, sizeof(long)*arrLength*ROW1, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW1);
+      // free(h_long_test);
+      std::cout << "-------------End Scan Step--------------" << std::endl;
       long resLength;
       cudaMemcpy(&resLength, sumRes + arrLength - 1, sizeof(long), cudaMemcpyDeviceToHost);
       start = clock();
@@ -998,13 +1009,13 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       cudaDeviceSynchronize();
       end = clock();
       lastStep += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-      // std::cout << "-------------Last Step--------------" << std::endl;
-      // std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
-      // //h_long_test = (long*) malloc(sizeof(long)*(arrLength+resLength)*ROW1);
-      // //cudaMemcpy(h_long_test, res, sizeof(long)*(arrLength+resLength)*ROW1, cudaMemcpyDeviceToHost);
-      // //print(h_long_test, (arrLength+resLength), ROW1);
-      // //free(h_long_test);
-      // std::cout << "-------------End Last Step--------------" << std::endl;
+      std::cout << "-------------Last Step--------------" << std::endl;
+      std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+      //h_long_test = (long*) malloc(sizeof(long)*(arrLength+resLength)*ROW1);
+      //cudaMemcpy(h_long_test, res, sizeof(long)*(arrLength+resLength)*ROW1, cudaMemcpyDeviceToHost);
+      //print(h_long_test, (arrLength+resLength), ROW1);
+      //free(h_long_test);
+      std::cout << "-------------End Last Step--------------" << std::endl;
 
       cudaFree(arr);
       cudaFree(res);
