@@ -1067,7 +1067,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     get<<<numBlock, BLOCKSIZE>>>(block_d, backslashes_d, size, total_padded_32, 0);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     //print_d(backslashes_d, total_padded_32, ROW1);
     //printf("%d\n", total_padded_32);
@@ -1079,7 +1079,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     cudaDeviceSynchronize();
     cudaFree(backslashes_d);
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     //printf("ecaped backslashes: \n");
     //print_d(escaped_d, total_padded_32, ROW1);
@@ -1090,7 +1090,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     get<<<numBlock, BLOCKSIZE>>>(block_d, quote_d, size, total_padded_32, 1);//////////////
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     //print_d(quote_d, total_padded_32, ROW1);
 
@@ -1100,7 +1100,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_not<<<numBlock, BLOCKSIZE>>>(escaped_d, escaped_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
 
     //print_d(escaped_d, total_padded_32, ROW1);
@@ -1110,7 +1110,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     end = clock();
     cudaFree(quote_d);
     cudaFree(escaped_d);
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
 
     //print_d(real_quote_d, total_padded_32, ROW1);
@@ -1145,13 +1145,13 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     cudaDeviceSynchronize();
     //print_d(total_one_d, total_padded_32, ROW1);
     end = clock();
-    std::cout << "Time elapsed Sum ones: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed Sum ones: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
 
     start = clock();
     thrust::exclusive_scan(thrust::cuda::par, total_one_32_d, total_one_32_d+(total_padded_32_div_32), total_one_32_d);
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     //print_d(total_one_reduced_d, sum, ROW1);
 
@@ -1166,7 +1166,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
 
     end = clock();
     //print_d(total_one_d, total_padded_32, ROW1);
-    std::cout << "Time elapsed scatter: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed scatter: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
 
 
@@ -1181,7 +1181,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
 
     //print_d(in_string_d, total_padded_32, ROW1);
 
-    std::cout << "Time elapsed Fact: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed Fact: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
     /*
     cudaMemcpy(in_string_d, prediction_d, sizeof(uint32_t)*total_padded_32, cudaMemcpyDeviceToDevice);
@@ -1227,7 +1227,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     classify<<<numBlock, BLOCKSIZE>>>(block_d, op_d, whitespace_d, size, total_padded_32);////////////////////
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
     //print_d(whitespace_d, total_padded_32, ROW1);
     //print_d(op_d, total_padded_32, ROW1);
@@ -1238,7 +1238,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_or<<<numBlock, BLOCKSIZE>>>(op_d, whitespace_d, scalar_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
     
     //print_d(scalar_d, total_padded_32, ROW1);
@@ -1246,7 +1246,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_not<<<numBlock, BLOCKSIZE>>>(scalar_d, scalar_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     
     //print_d(scalar_d, total_padded_32, ROW1);
@@ -1257,14 +1257,14 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_not<<<numBlock, BLOCKSIZE>>>(in_string_d, in_string_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     //print_d(in_string_d, total_padded_32, ROW1);
     
     start = clock();
     parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(scalar_d, in_string_d, nonquote_scalar_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
 
     //print_d(nonquote_scalar_d, total_padded_32, ROW1);
@@ -1275,7 +1275,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_shift_right<<<numBlock, BLOCKSIZE>>>(nonquote_scalar_d, overflow, 31, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
     //print_d(overflow, total_padded_32, ROW1);
     
@@ -1285,7 +1285,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_shift_left<<<numBlock, BLOCKSIZE>>>(nonquote_scalar_d, follows_nonquote_scalar_d,  1, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     //print_d(follows_nonquote_scalar_d, total_padded_32, ROW1);
 
@@ -1293,7 +1293,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_or<<<numBlock, BLOCKSIZE>>>(follows_nonquote_scalar_d, overflow, follows_nonquote_scalar_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
 
     //print_d(follows_nonquote_scalar_d, total_padded_32, ROW1);
@@ -1308,7 +1308,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_not<<<numBlock, BLOCKSIZE>>>(whitespace_d, whitespace_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
     //print_d(whitespace_d, total_padded_32, ROW1);
 
@@ -1317,7 +1317,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(in_string_d, whitespace_d, in_string_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     cudaFree(whitespace_d);                                                         //// let it be here for now
     //print_d(in_string_d, total_padded_32, ROW1);
@@ -1329,7 +1329,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     split<<<numBlock, BLOCKSIZE>>>(in_string_d, in_string_8_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     cudaFree(in_string_d);
     //print_d(in_string_d, total_padded_32, ROW1);
     //print8_d<int>(in_string_8_d, size, ROW1);
@@ -1342,7 +1342,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     parallel_and<uint8_t><<<numBlock, BLOCKSIZE>>>(in_string_8_d, block_d, in_string_8_d, size, size);
     cudaDeviceSynchronize();
     end = clock();
-    std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
 
     //in_string_8  = (uint8_t*) malloc(size*sizeof(uint8_t));
     //cudaMemcpy(in_string_8, in_string_8_d, sizeof(uint8_t)*size, cudaMemcpyDeviceToHost);
@@ -1416,9 +1416,9 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     assign_open_close<<<numBlock, BLOCKSIZE>>>(block_d, open_d, close_d,  size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
-    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    //time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
 
-    printf("assign time: %f\n", time);
+    //printf("assign time: %f\n", time);
 
     //print8_d<uint8_t>(block_d, size, ROW1);
     //print_d(open_d, total_padded_32, ROW1);
@@ -1429,8 +1429,8 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     sum_ones<<<smallNumBlock, BLOCKSIZE>>>(close_d, close_count_d, close_count_32_d, size, total_padded_32, total_padded_32_div_32);
     cudaDeviceSynchronize();
     end = clock();
-    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    printf("sum time: %f\n", time);
+    //time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    //printf("sum time: %f\n", time);
 
 
     //print_d(open_count_d, total_padded_32, ROW1);
@@ -1442,8 +1442,8 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     thrust::exclusive_scan(thrust::cuda::par, close_count_32_d, close_count_32_d+total_padded_32_div_32, close_count_32_d);
 
     end = clock();
-    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    printf("prefix time: %f\n", time);
+    //time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    //printf("prefix time: %f\n", time);
 
     //print_d(open_count_32_d, total_padded_32_div_32, ROW1);
     //print_d(close_count_32_d, total_padded_32_div_32, ROW1);
@@ -1459,8 +1459,8 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     cudaDeviceSynchronize();
     end = clock();
 
-    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    printf("scatter time: %f\n", time);
+    //time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    //printf("scatter time: %f\n", time);
 
     //print_d(open_prefix_sum_d, total_padded_32, ROW1);
     //print_d(close_prefix_sum_d, total_padded_32, ROW1);
@@ -1483,8 +1483,8 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     cudaDeviceSynchronize();
 
     end = clock();
-    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    printf("scatter block time: %f\n", time);
+    //time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    //printf("scatter block time: %f\n", time);
 
     //print_d(open_block, size, ROW1);
     //print_d(close_block, size, ROW1);
@@ -1625,12 +1625,12 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
 
     //print8_d<uint8_t>(in_string_8_d, size, ROW1);
 
-    start = clock();
+    //start = clock();
 
     //printf("last_index2: %d\n", last_index_tokens);       // is it possible?
 
-    end = clock();
-    last_record_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    //end = clock();
+    //last_record_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
 
     uint32_t* parser_input;
 
@@ -1655,7 +1655,7 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     parser_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
                                                         // RUN time ?!
     //print8_d<uint8_t>(all_in_one_d, all_in_one_size, ROW1);
-    runtime = utf_runtime + tokenize_runtime + last_record_runtime + multi_to_one_runtime + parser_runtime;
+    runtime = utf_runtime + tokenize_runtime + multi_to_one_runtime + parser_runtime;
 
     cudaDeviceSynchronize();
     cudaFree(tokens_d);
@@ -1673,7 +1673,7 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
 
     printf("utf runtime: %f\n", utf_runtime);
     printf("tokenize runtime: %f\n", tokenize_runtime);
-    printf("last record runtime: %f\n", last_record_runtime);
+    //printf("last record runtime: %f\n", last_record_runtime);
     printf("multi to one runtime: %f\n", multi_to_one_runtime);
     printf("parser runtime: %f\n", parser_runtime);
     printf("total runtime: %f\n", runtime);
