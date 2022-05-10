@@ -875,6 +875,8 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
   long* res;
   long* fakeRes;
   long* arr;
+  cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
+
   //char* attacheArr;
   clock_t start, end, allStart, allEnd;
   char* h_char_test;
@@ -926,6 +928,8 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
   // std::cout << "-------------End Second Step--------------" << std::endl;
   long arrLength;
   cudaMemcpy(&arrLength, d_arr+(attachedLength-1), sizeof(long), cudaMemcpyDeviceToHost);
+  cudaMalloc(&res, arrLength*ROW4*sizeof(long));
+
   if(correctDepth != -1){
     bool correct;
     correct = isCorrect(attachedLength, d_arr+(attachedLength)*ROW2, d_sameDepthArr);
@@ -940,11 +944,11 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
       std::cout << "Total: " << l_Total << " Free: " << l_free << " Allocated: " << allocated << std::endl;
       //*******************************//
 
-      cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
+      //cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
       cudaMemcpy(arr, d_arr,  attachedLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(d_arr);
 
-      cudaMalloc(&res, arrLength*ROW4*sizeof(long));
+      //cudaMalloc(&res, arrLength*ROW4*sizeof(long));
       reduce<<<numBlock, BLOCKSIZE>>>(attachedLength, arrLength, d_sameDepthArr, arr, res);
       cudaDeviceSynchronize();
       end = clock();
