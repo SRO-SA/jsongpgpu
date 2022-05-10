@@ -932,6 +932,14 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
     if(correct){      
       start = clock();
       printf("         %d\n", attachedLength);
+      //*******************************//
+      size_t l_free = 0;
+      size_t l_Total = 0;
+      cudaError_t error_id = cudaMemGetInfo(&l_free, &l_Total);
+      size_t allocated = (l_Total - l_free);
+      std::cout << "Total: " << l_Total << " Free: " << l_free << " Allocated: " << allocated << std::endl;
+      //*******************************//
+
       cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
       cudaMemcpy(arr, d_arr,  attachedLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(d_arr);
