@@ -931,6 +931,7 @@ double NewRuntime_Parallel_GPU(char* input_d, int length) {
     correct = isCorrect(attachedLength, d_arr+(attachedLength)*ROW2, d_sameDepthArr);
     if(correct){      
       start = clock();
+      printf("         %d\n", attachedLength);
       cudaMalloc(&arr, attachedLength*ROW4*sizeof(long));
       cudaMemcpy(arr, d_arr,  attachedLength*ROW2*sizeof(long), cudaMemcpyDeviceToDevice);
       cudaFree(d_arr);
