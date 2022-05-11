@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <iomanip>
+#include <chrono>
+#include <thread>
 #include <x86intrin.h>
 #include "cuda_profiler_api.h"
 #include <thrust/sort.h>
@@ -19,8 +21,8 @@
 #include <thrust/transform.h>
 #include <inttypes.h>
 
-#define        MAXLINELENGTH    1073741824  //4194304  //8388608 33554432 67108864 134217728 268435456 536870912 1073741824// Max record size
-#define        BUFSIZE       1073741824  //4194304 //8388608 33554432 67108864 134217728 268435456 536870912 1073741824
+#define        MAXLINELENGTH    536870912  //4194304  //8388608 33554432 67108864 134217728 268435456 536870912 1073741824// Max record size
+#define        BUFSIZE       536870912  //4194304 //8388608 33554432 67108864 134217728 268435456 536870912 1073741824
 
 enum hypothesis_val {in, out, unknown, fail};
 
@@ -28,7 +30,7 @@ enum hypothesis_val {in, out, unknown, fail};
 
 #define RUNTIMES 1
 
-#define BLOCKSIZE 256
+#define BLOCKSIZE 512 //256
 #define FILESCOUNT 4
 #define NAMELENGTH 25
 
@@ -1616,7 +1618,33 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     uint64_t * parse_tree; 
     uint8_t* tokens_d;
     clock_t start, end;
+    size_t limit_v;
     double runtime=0, utf_runtime = 0, tokenize_runtime = 0, last_record_runtime = 0, multi_to_one_runtime = 0, parser_runtime=0;
+    // cudaDeviceGetLimit(&limit_v, cudaLimitStackSize);
+    // printf("Stack Limit: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitPrintfFifoSize);
+    // printf("Print FIFO: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitMallocHeapSize);
+    // printf("Heap Size: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitDevRuntimeSyncDepth);
+    // printf("Runtime Depth: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitDevRuntimePendingLaunchCount);
+    // printf("Runtime Pending Lunch: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitMaxL2FetchGranularity);
+    // printf("Max L2 Fetch: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitPersistingL2CacheSize);
+    // printf("Persisting L2 Cache: %ld\n", limit_v);
+
+    // cudaDeviceSetLimit(cudaLimitPrintfFifoSize, (1<<10));
+    // cudaDeviceSetLimit(cudaLimitMallocHeapSize, (1<<10));
+
+    //std::this_thread::sleep_for(std::chrono::seconds(10));
+    // cudaDeviceGetLimit(&limit_v, cudaLimitPrintfFifoSize);
+    // printf("Print FIFO: %ld\n", limit_v);
+    // cudaDeviceGetLimit(&limit_v, cudaLimitMallocHeapSize);
+    // printf("Heap Size: %ld\n", limit_v);
+ 
+
     //printf("%c\n", (char)block[0]);
     cudaMalloc(&block_d, BUFSIZE*sizeof(uint8_t));
     cudaMemcpy(block_d, block, sizeof(uint8_t)*size, cudaMemcpyHostToDevice);
