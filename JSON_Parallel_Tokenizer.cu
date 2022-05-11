@@ -19,8 +19,8 @@
 #include <thrust/transform.h>
 #include <inttypes.h>
 
-#define        MAXLINELENGTH    1073741824  //4194304  //8388608 33554432 67108864 134217728 268435456 536870912 1073741824// Max record size
-#define        BUFSIZE       1073741824  //4194304 //8388608 33554432 67108864 134217728 268435456 536870912 1073741824
+#define        MAXLINELENGTH    134217728  //4194304  //8388608 33554432 67108864 134217728 268435456 536870912 1073741824// Max record size
+#define        BUFSIZE       134217728  //4194304 //8388608 33554432 67108864 134217728 268435456 536870912 1073741824
 
 enum hypothesis_val {in, out, unknown, fail};
 
@@ -1382,6 +1382,14 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     clock_t start, end;
     double time = 0;
     
+    int total_padded_32 = (size+31)/32 ;
+    int numBlock = (size + BLOCKSIZE - 1) / BLOCKSIZE;
+    int total_padded_32_div_32 = (total_padded_32+31)/32 ;
+    int smallNumBlock = (total_padded_32_div_32 + BLOCKSIZE - 1) / BLOCKSIZE;
+
+    uint32_t* general_ptr;
+    cudaMalloc(&general_ptr, total_padded_32*sizeof(uint32_t)*6);
+
     uint32_t* open_d;
     uint32_t* close_d;
 
@@ -1394,20 +1402,24 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     uint32_t* open_prefix_sum_d;
     uint32_t* close_prefix_sum_d;
 
+    open_d = general_ptr;
+    close_d = general_ptr+total_padded_32;
+    open_count_d = general_ptr+total_padded_32*2;
+    close_count_d = general_ptr+total_padded_32*3;
+    open_prefix_sum_d = general_ptr+total_padded_32*4;
+    close_prefix_sum_d = general_ptr+total_padded_32*5;
+
     //uint8_t* block_d;
-    int total_padded_32 = (size+31)/32 ;
-    int numBlock = (size + BLOCKSIZE - 1) / BLOCKSIZE;
-    int total_padded_32_div_32 = (total_padded_32+31)/32 ;
-    int smallNumBlock = (total_padded_32_div_32 + BLOCKSIZE - 1) / BLOCKSIZE;
 
 
     //cudaMalloc(&block_d, size*sizeof(uint8_t));
     //cudaMemcpy(block_d, block, size*sizeof(uint8_t), cudaMemcpyHostToDevice);
-    cudaMalloc(&open_d, total_padded_32*sizeof(uint32_t));
-    cudaMalloc(&close_d, total_padded_32*sizeof(uint32_t));
 
-    cudaMalloc(&open_count_d, total_padded_32*sizeof(uint32_t));
-    cudaMalloc(&close_count_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&open_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&close_d, total_padded_32*sizeof(uint32_t));
+
+    //cudaMalloc(&open_count_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&close_count_d, total_padded_32*sizeof(uint32_t));
 
     cudaMalloc(&open_count_32_d, total_padded_32_div_32*sizeof(uint32_t));
     cudaMalloc(&close_count_32_d, total_padded_32_div_32*sizeof(uint32_t));
@@ -1449,8 +1461,8 @@ uint32_t* get_last_record(uint8_t* block_d, int size, uint32_t &last_index, uint
     //print_d(close_count_32_d, total_padded_32_div_32, ROW1);
 
 
-    cudaMalloc(&open_prefix_sum_d, total_padded_32*sizeof(uint32_t));
-    cudaMalloc(&close_prefix_sum_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&open_prefix_sum_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&close_prefix_sum_d, total_padded_32*sizeof(uint32_t));
 
     start = clock();
 
