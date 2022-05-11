@@ -31,7 +31,7 @@ enum hypothesis_val {in, out, unknown, fail};
 
 #define RUNTIMES 1
 
-#define BLOCKSIZE 512 //256
+#define BLOCKSIZE 256
 #define FILESCOUNT 4
 #define NAMELENGTH 25
 
