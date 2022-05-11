@@ -1221,8 +1221,12 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
     /////////////////////////////////////////////
     
     uint32_t *whitespace_d, *op_d;
+    uint32_t* general_ptr;
+    cudaMalloc(&general_ptr, total_padded_32*sizeof(uint32_t)*5);
+
+    op_d = general_ptr;
     cudaMalloc(&whitespace_d, total_padded_32*sizeof(uint32_t));
-    cudaMalloc(&op_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&op_d, total_padded_32*sizeof(uint32_t));
     start = clock();
     classify<<<numBlock, BLOCKSIZE>>>(block_d, op_d, whitespace_d, size, total_padded_32);////////////////////
     cudaDeviceSynchronize();
@@ -1233,8 +1237,10 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
     //print_d(op_d, total_padded_32, ROW1);
     
     uint32_t* scalar_d;
+
+    scalar_d = general_ptr+total_padded_32;
     start = clock();
-    cudaMalloc(&scalar_d, total_padded_32*sizeof(uint32_t));
+    //cudaMalloc(&scalar_d, total_padded_32*sizeof(uint32_t));
     parallel_or<<<numBlock, BLOCKSIZE>>>(op_d, whitespace_d, scalar_d, size, total_padded_32);
     cudaDeviceSynchronize();
     end = clock();
@@ -1252,7 +1258,8 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
     //print_d(scalar_d, total_padded_32, ROW1);
 
     uint32_t* nonquote_scalar_d;
-    cudaMalloc(&nonquote_scalar_d, total_padded_32*sizeof(uint32_t));
+    nonquote_scalar_d = general_ptr+total_padded_32*2;
+    //cudaMalloc(&nonquote_scalar_d, total_padded_32*sizeof(uint32_t));
     start = clock();
     parallel_not<<<numBlock, BLOCKSIZE>>>(in_string_d, in_string_d, size, total_padded_32);
     cudaDeviceSynchronize();
@@ -1270,7 +1277,8 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
     //print_d(nonquote_scalar_d, total_padded_32, ROW1);
     
     uint32_t* overflow;
-    cudaMalloc(&overflow, total_padded_32*sizeof(uint32_t));
+    overflow = general_ptr+total_padded_32*3;
+    //cudaMalloc(&overflow, total_padded_32*sizeof(uint32_t));
     start = clock();
     parallel_shift_right<<<numBlock, BLOCKSIZE>>>(nonquote_scalar_d, overflow, 31, size, total_padded_32);
     cudaDeviceSynchronize();
@@ -1280,7 +1288,8 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
     //print_d(overflow, total_padded_32, ROW1);
     
     uint32_t* follows_nonquote_scalar_d;
-    cudaMalloc(&follows_nonquote_scalar_d, total_padded_32*sizeof(uint32_t));
+    follows_nonquote_scalar_d = general_ptr+total_padded_32*4;
+    //cudaMalloc(&follows_nonquote_scalar_d, total_padded_32*sizeof(uint32_t));
     start = clock();
     parallel_shift_left<<<numBlock, BLOCKSIZE>>>(nonquote_scalar_d, follows_nonquote_scalar_d,  1, size, total_padded_32);
     cudaDeviceSynchronize();
@@ -1298,11 +1307,12 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
 
     //print_d(follows_nonquote_scalar_d, total_padded_32, ROW1);
 
-    cudaFree(op_d);
-    cudaFree(follows_nonquote_scalar_d);                                                    //Remove later
-    cudaFree(scalar_d);
-    cudaFree(nonquote_scalar_d);
-    cudaFree(overflow);
+    // cudaFree(op_d);
+    // cudaFree(follows_nonquote_scalar_d);                                                    //Remove later
+    // cudaFree(scalar_d);
+    // cudaFree(nonquote_scalar_d);
+    // cudaFree(overflow);
+    cudaFree(general_ptr);
 
     start = clock();
     parallel_not<<<numBlock, BLOCKSIZE>>>(whitespace_d, whitespace_d, size, total_padded_32);
