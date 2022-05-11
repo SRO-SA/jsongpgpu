@@ -1056,7 +1056,7 @@ void parallel_copy(uint8_t* tokens_d, uint8_t* res_d, uint32_t res_size, uint32_
     }
 }
 
-uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_string_8_out_d, uint32_t &last_index_tokens){
+uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &last_index_tokens){
     int total_padded_32 = (size+31)/32 ;
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
     uint32_t* backslashes_d;
@@ -1346,7 +1346,6 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
 
     //in_string_8  = (uint8_t*) malloc(size*sizeof(uint8_t));
     //cudaMemcpy(in_string_8, in_string_8_d, sizeof(uint8_t)*size, cudaMemcpyDeviceToHost);
-    in_string_8_out_d = in_string_8_d;
 
     uint8_t* filtered_string_8_d;
     int sum = thrust::count_if(thrust::cuda::par, in_string_8_d, in_string_8_d+size, not_zero());
@@ -1373,6 +1372,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint8_t*& in_
     //free(in_string_out);
     in_string_out_d = filtered_string_8_d;
     ret_size = sum;
+    cudaFree(in_string_8_d);
 
     return in_string_out_d;
 }
@@ -1627,8 +1627,7 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     start = clock();
     int ret_size = 0;
     //TODO Pass everything between blocks. in string, 
-    uint8_t* in_string_8_d;
-    tokens_d = Tokenize(block_d, size, ret_size, in_string_8_d, last_index_tokens);
+    tokens_d = Tokenize(block_d, size, ret_size, last_index_tokens);
     end = clock();
     tokenize_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
     uint32_t last_index;
@@ -1674,7 +1673,6 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     cudaFree(block_d);
     //cudaFree(complete_records_d);
     cudaFree(all_in_one_d);
-    cudaFree(in_string_8_d);
 
     /*
     size_t total, free, allocated;
