@@ -614,7 +614,7 @@ int main(int argc, char **argv)
 
   uint64_t read_byte_size = file_read(js, sizes, total_size);
   double line_average_size = read_byte_size/total_size;
-  //printf("line average: %f\n", line_average_size);
+  printf("line average: %f\n", line_average_size);
   uint32_t lines_to_parse = 33554432/line_average_size;
   uint32_t line_absolute_size = ((uint32_t) line_average_size << 1) >> 1;
   //32768 65536 131072 262144 524288 1048576 2097152 4194304 8388608 33554432 134217728 536870912 1073741824
