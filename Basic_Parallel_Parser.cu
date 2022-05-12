@@ -14,6 +14,7 @@
 #include <pthread.h>
 
 #define BLOCKSIZE 256
+#define TOKENS 1000000
 
 int print_d(char* input_d, int length){
   char * input;
@@ -550,7 +551,7 @@ void host_to_device(char ** js, size_t * sizes, const char ** &js_d, size_t * &s
 
 uint64_t file_read(char ** &records, size_t * &records_size, int &total_size){
   FILE *fp;
-  fp=fopen("./../Large-Json/walmart_small_records.json", "r");
+  fp=fopen("./../Large-Json/google_map_small_records.json", "r");
   long int lines =0;
 
   if ( fp == NULL ) {
@@ -613,9 +614,11 @@ int main(int argc, char **argv)
 
   uint64_t read_byte_size = file_read(js, sizes, total_size);
   double line_average_size = read_byte_size/total_size;
-  uint32_t lines_to_parse = 8388608/line_average_size; 
+  //printf("line average: %f\n", line_average_size);
+  uint32_t lines_to_parse = 33554432/line_average_size;
+  uint32_t line_absolute_size = ((uint32_t) line_average_size << 1) >> 1;
   //32768 65536 131072 262144 524288 1048576 2097152 4194304 8388608 33554432 134217728 536870912 1073741824
-
+  //exit(0);
   const char **js_d;
   size_t * sizes_d;
 
@@ -640,18 +643,20 @@ int main(int argc, char **argv)
   
     cudaMalloc(&p_d, sizeof(jsmn_parser)*current_total);
     jsmntok_t *t; // We expect no more than 128 JSON tokens
-    jsmntok_t *t_h = (jsmntok_t *)malloc(sizeof(jsmntok_t)*(current_total*10000));
-  
-    printf("fdsfsfsd\n");
+    jsmntok_t *t_h = (jsmntok_t *)malloc(sizeof(jsmntok_t)*(current_total*line_absolute_size));
+
+    //printf("first character: %c\n", *(js[current_total-2]));
+
+
     start = clock();
-    cudaMalloc(&t, (current_total*10000)*sizeof(jsmntok_t));
+    cudaMalloc(&t, (current_total*line_absolute_size)*sizeof(jsmntok_t));
     jsmn_init<<<numBlock, BLOCKSIZE>>>(p_d, (size_t)current_total);
     cudaDeviceSynchronize();
   
     //print_d(*(temp), sizes[0]);
     int *error;
     cudaMalloc(&error, sizeof(int)*current_total);
-    jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d+total_count, sizes_d+total_count, t, 10000, current_total, error);
+    jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d+total_count, sizes_d+total_count, t, line_absolute_size, current_total, error);
     cudaDeviceSynchronize();
     end = clock();
     iteration_time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
@@ -660,9 +665,10 @@ int main(int argc, char **argv)
   
     int *error_h = (int*)malloc(sizeof(int)*current_total);
     cudaMemcpy(error_h, error, sizeof(int)*current_total, cudaMemcpyDeviceToHost);
-    cudaMemcpy(t_h, t, sizeof(jsmntok_t)*current_total*10000, cudaMemcpyDeviceToHost);
+    cudaMemcpy(t_h, t, sizeof(jsmntok_t)*current_total*line_absolute_size, cudaMemcpyDeviceToHost);
     cudaMemcpy(p, p_d, sizeof(jsmn_parser)*current_total, cudaMemcpyDeviceToHost);
-    //printf("%.*s\n", t_h[(current_total-1)*10000+2].end - t_h[(current_total-1)*10000+2].start, js[current_total-1] + t_h[(current_total-1)*10000+2].start);
+    //printf("%.*s\n", t_h[(current_total-2)*line_absolute_size+5].end - t_h[(current_total-2)*line_absolute_size+5].start,
+    //        js[current_total-2] + t_h[(current_total-2)*line_absolute_size+5].start);
     //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
     free(error_h);
     free(t_h);
@@ -672,7 +678,7 @@ int main(int argc, char **argv)
     cudaFree(error);
 
 
-    total_count += total_allowed;
+    total_count += current_total;
     //break;
   }
 
