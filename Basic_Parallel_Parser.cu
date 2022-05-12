@@ -551,7 +551,7 @@ void host_to_device(char ** js, size_t * sizes, const char ** &js_d, size_t * &s
 
 uint64_t file_read(char ** &records, size_t * &records_size, int &total_size){
   FILE *fp;
-  fp=fopen("./../Large-Json/twitter_small_records.json", "r");
+  fp=fopen("./../Large-Json/walmart_small_records.json", "r");
   long int lines =0;
 
   if ( fp == NULL ) {
