@@ -13,13 +13,17 @@
 #include <string.h>
 #include <pthread.h>
 
-#define BLOCKSIZE 256
+#define BLOCKSIZE 32
 #define TOKENS 1000000
+#define THREADID 0
+#define AVGGPUCLOCK 1346000000
 
-int print_d(char* input_d, int length){
+int print_d(const char** input_d, int length){
   char * input;
+  char ** input_ptr = (char **)malloc(sizeof(char*));
+  cudaMemcpy(input_ptr, input_d, sizeof(char *), cudaMemcpyDeviceToHost);
   input = (char*) malloc(sizeof(char)*length);
-  cudaMemcpy(input, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+  cudaMemcpy(input, *input_ptr, sizeof(char)*length, cudaMemcpyDeviceToHost);
   printf("%s\n", input);
   free(input);
   return 1;
@@ -228,18 +232,33 @@ __device__
                               const size_t len, jsmntok_t *tokens,
                               const size_t num_tokens) {
    jsmntok_t *token;
+
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   int stride = blockDim.x * gridDim.x;
+
+   int k = index;
  
    int start = parser->pos;
+
+   int case_escaped = 0;
+   int case_utf = 0;
+   int total_case = 0;
    
    /* Skip starting quote */
    parser->pos++;
    
    for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
      char c = js[parser->pos];
- 
+
      /* Quote: end of string */
      if (c == '\"') {
+      //if(k==0 && parser->pos + 1 < len)
+        //printf("position: %d, previous character: %c, current character: %c, next character: %c\n", parser->pos, js[(parser->pos)-1], js[(parser->pos)], js[(parser->pos)+1]);
        if (tokens == NULL) {
+        // if(threadIdx.x == THREADID && blockIdx.x == 0) printf("%f\n",
+        //                            ((double)case_escaped));
+        // if(threadIdx.x == THREADID && blockIdx.x == 0) printf("%f\n",
+        //                            ((double)(total_case-case_escaped)));
          return 0;
        }
        token = jsmn_alloc_token(parser, tokens, num_tokens);
@@ -251,6 +270,10 @@ __device__
  #ifdef JSMN_PARENT_LINKS
        token->parent = parser->toksuper;
  #endif
+      //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("%f\n",
+      //                             ((double)case_escaped));
+      //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("%f\n",
+      //                             ((double)(total_case-case_escaped)));
        return 0;
      }
  
@@ -268,6 +291,7 @@ __device__
        case 'r':
        case 'n':
        case 't':
+         if(threadIdx.x == THREADID && blockIdx.x == 0) case_escaped++;
          break;
        /* Allows escaped symbol \uXXXX */
        case 'u':
@@ -284,6 +308,7 @@ __device__
            parser->pos++;
          }
          parser->pos--;
+         if(threadIdx.x == THREADID && blockIdx.x == 0) case_utf++;
          break;
        /* Unexpected symbol */
        default:
@@ -291,6 +316,7 @@ __device__
          return JSMN_ERROR_INVAL;
        }
      }
+     if( threadIdx.x == THREADID && blockIdx.x == 0) total_case++;
    }
    parser->pos = start;
    return JSMN_ERROR_PART;
@@ -304,7 +330,9 @@ __device__
                          jsmntok_t *tokens_s, const unsigned int num_tokens, int total_size, int *error) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
+    clock_t start, end;
     //printf("%d\n", 110);
+
     for(int k=index; k<total_size; k+=stride){
       jsmn_parser *parser = parser_s+k;
       const char * js = js_s[k];
@@ -314,15 +342,37 @@ __device__
    int i;
    jsmntok_t *token;
    int count = parser->toknext;
+
+   double thread_runtime = 0;
+   double thread_string_runtime = 0;
+   double thread_comma_runtime = 0;
+   double thread_start_obj_runtime = 0;
+   double thread_primitive_runtime = 0;
+
+   int case_open = 0;
+   int case_close = 0;
+   int case_string = 0;
+   int case_whitespace = 0;
+   int case_colon = 0;
+   int case_comma = 0;
+   int case_primitive = 0;
+
+   int current_state = 0;
+   int state_changed_num = 0;
+
  
    for (; parser->pos < len && js[parser->pos] != '\0'; parser->pos++) {
      char c;
      jsmntype_t type;
+   //if(threadIdx.x == THREADID) printf("blockId: %d, position: %d\n", blockIdx.x, parser->pos);
 
      c = js[parser->pos];
      switch (c) {
-     case '{':
+     case '{': // if open brace/bracket allocate a token and if its a key return an error, otherwise set the type and starting point, check next char
      case '[':
+     if(threadIdx.x == THREADID) case_open++;
+     if(threadIdx.x == THREADID) start = clock();
+
        count++;
        if (tokens == NULL) {
          break;
@@ -349,14 +399,18 @@ __device__
        token->type = (c == '{' ? JSMN_OBJECT : JSMN_ARRAY);
        token->start = parser->pos;
        parser->toksuper = parser->toknext - 1;
+       if(threadIdx.x == THREADID) end = clock();
+       if(threadIdx.x == THREADID) thread_start_obj_runtime += ((double)(end-start)/AVGGPUCLOCK)*1000;
        break;
-     case '}':
-     case ']':
+     case '}': // if it's end of an object, try to find the parent node for the current obj and set it as token->parent if the flag is set,
+     case ']': // Also find the last token that doesn't have an ending point, using parent connection.
+       if(threadIdx.x == THREADID) case_close++;
        if (tokens == NULL) {
          break;
        }
        type = (c == '}' ? JSMN_OBJECT : JSMN_ARRAY);
  #ifdef JSMN_PARENT_LINKS
+       if(threadIdx.x == THREADID) start = clock();
        if (parser->toknext < 1) {
           error[k] = JSMN_ERROR_INVAL;
          return ;//JSMN_ERROR_INVAL;
@@ -381,7 +435,11 @@ __device__
          }
          token = &tokens[token->parent];
        }
- #else
+       if(threadIdx.x == THREADID) end = clock();
+       if(threadIdx.x == THREADID) thread_runtime += ((double)(end-start)/AVGGPUCLOCK)*1000;
+       //if(threadIdx.x == THREADID && blockIdx.x == 45) printf("blockId: %d, %f\n", blockIdx.x, ((double)(end)/CLOCKS_PER_SEC)*1000 );
+ #else //if flag is not set, find the last token with no ending using iteration on parsed tokens and set the current character as its ending token
+       if(threadIdx.x == THREADID) start = clock();
        for (i = parser->toknext - 1; i >= 0; i--) {
          token = &tokens[i];
          if (token->start != -1 && token->end == -1) {
@@ -394,21 +452,28 @@ __device__
            break;
          }
        }
+       //if(threadIdx.x == 1) printf("blockId: %d\n", blockIdx.x);
        /* Error if unmatched closing bracket */
        if (i == -1) {
          error[k] = JSMN_ERROR_INVAL;
          return ;//JSMN_ERROR_INVAL;
        }
-       for (; i >= 0; i--) {
+       for (; i >= 0; i--) { //find the next last object that doesn't have an ending and set that token as the parser's current parent.
          token = &tokens[i];
          if (token->start != -1 && token->end == -1) {
            parser->toksuper = i;
            break;
          }
        }
+       if(threadIdx.x == THREADID) end = clock();
+       if(threadIdx.x == THREADID) thread_runtime += ((double)(end-start)/AVGGPUCLOCK)*1000;
+       //if(threadIdx.x == THREADID) printf("blockId: %d, %f\n", blockIdx.x, ((double)(end-start)/CLOCKS_PER_SEC)*1000 );
+
  #endif
        break;
-     case '\"':
+     case '\"': // it's start of an string. call parse_string
+       if(threadIdx.x == THREADID) case_string++;
+       if(threadIdx.x == THREADID) start = clock();
        r = jsmn_parse_string(parser, js, len, tokens, num_tokens);
        if (r < 0) {
          error[k] = r;
@@ -418,16 +483,22 @@ __device__
        if (parser->toksuper != -1 && tokens != NULL) {
          tokens[parser->toksuper].size++;
        }
+       if(threadIdx.x == THREADID) end = clock();
+       if(threadIdx.x == THREADID) thread_string_runtime += ((double)(end-start)/AVGGPUCLOCK)*1000;
        break;
-     case '\t':
+     case '\t':  // white space, just pass
      case '\r':
      case '\n':
      case ' ':
+      if(threadIdx.x == THREADID) case_whitespace++;
        break;
-     case ':':
+     case ':': // update the parent token to the previouse token.
+        if(threadIdx.x == THREADID) case_colon++;
        parser->toksuper = parser->toknext - 1;
        break;
-     case ',':
+     case ',': // this token is complete find the next one and its parent (use loops if we don't have parent links).
+     if(threadIdx.x == THREADID) case_comma++;
+     if(threadIdx.x == THREADID) start = clock();
        if (tokens != NULL && parser->toksuper != -1 &&
            tokens[parser->toksuper].type != JSMN_ARRAY &&
            tokens[parser->toksuper].type != JSMN_OBJECT) {
@@ -444,6 +515,8 @@ __device__
          }
  #endif
        }
+       if(threadIdx.x == THREADID) end = clock();
+       if(threadIdx.x == THREADID) thread_comma_runtime += ((double)(end-start)/AVGGPUCLOCK)*1000;
        break;
  #ifdef JSMN_STRICT
      /* In strict mode primitives are: numbers and booleans */
@@ -461,6 +534,8 @@ __device__
      case 't':
      case 'f':
      case 'n':
+      if(threadIdx.x == THREADID) case_primitive++;
+       if(threadIdx.x == THREADID) start = clock();
        /* And they must not be keys of the object */
        if (tokens != NULL && parser->toksuper != -1) {
          const jsmntok_t *t = &tokens[parser->toksuper];
@@ -483,6 +558,8 @@ __device__
        if (parser->toksuper != -1 && tokens != NULL) {
          tokens[parser->toksuper].size++;
        }
+       if(threadIdx.x == THREADID) end = clock();
+       if(threadIdx.x == THREADID) thread_primitive_runtime += ((double)(end-start)/AVGGPUCLOCK)*1000;
        break;
  
  #ifdef JSMN_STRICT
@@ -493,8 +570,26 @@ __device__
  #endif
      }
    }
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread total time: %f\n",
+  //                              thread_start_obj_runtime+thread_string_runtime+thread_comma_runtime+thread_primitive_runtime);
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread start obj time: %f\n",thread_start_obj_runtime);
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread end obj time: %f\n",thread_runtime);
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread string time: %f\n",thread_string_runtime);
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread comma time: %f\n",thread_comma_runtime);
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread primitive time: %f\n",thread_primitive_runtime);
 
-   if (tokens != NULL) {
+  // int total_case = case_open+case_close+case_string+case_whitespace+case_colon+case_comma+case_primitive;
+  //  if(threadIdx.x == THREADID && blockIdx.x == 0) printf("thread start %f, end %f, string %f, whitespace %f, colon %f, comma %f, primitive %f\n",
+  //                                    ((double)case_open),
+  //                                    ((double)case_close),
+  //                                    ((double)case_string),
+  //                                    ((double)case_whitespace),
+  //                                    ((double)case_colon),
+  //                                    ((double)case_comma),
+  //                                    ((double)case_primitive));
+   
+
+   if (tokens != NULL) { // if there is any remaining token that doesn't have and end point, return error
      for (i = parser->toknext - 1; i >= 0; i--) {
        /* Unmatched opened object or array */
        if (tokens[i].start != -1 && tokens[i].end == -1) {
@@ -533,26 +628,45 @@ __device__
  #endif /* JSMN_H */
 
 
-void host_to_device(char ** js, size_t * sizes, const char ** &js_d, size_t * &sizes_d, int length){
-  char ** middle;
-  middle = (char **)malloc(sizeof(char*)*length);
-  char ** back_d;
-  for(int i = 0; i<length; i++){
-    cudaMalloc(middle+i, sizeof(char)*sizes[i]);
-    cudaMemcpy(middle[i], js[i], sizeof(char)*sizes[i], cudaMemcpyHostToDevice);
+void total_free(const char ** &js_d, size_t * &sizes_d, int length, int lines_to_parse){
+  char ** js = (char **)malloc(sizeof(char *)*lines_to_parse);
+  cudaMemcpy(js, js_d, sizeof(char *)*lines_to_parse, cudaMemcpyDeviceToHost);
+  for(int i=0; i<lines_to_parse; i++){
+    //printf("fffffffff\n");
+    cudaFree(js[i]);
   }
-  cudaMalloc(&sizes_d, sizeof(size_t)*length);
-  cudaMemcpy(sizes_d, sizes, sizeof(size_t)*length, cudaMemcpyHostToDevice);
-  cudaMalloc(&js_d, sizeof(char *)*length);
-  cudaMemcpy(js_d, middle, sizeof(char *)*length, cudaMemcpyHostToDevice);
+  cudaFree(js_d);
+  free(js);
+  cudaFree(sizes_d);
+
+
+}
+
+void host_to_device(char ** js, size_t * sizes, const char ** &js_d, size_t * &sizes_d, int length, int lines_to_parse, int iter){
+  char ** middle;
+  middle = (char **)malloc(sizeof(char*)*lines_to_parse);
+  //char ** back_d;
+  for(int i = 0; i<lines_to_parse && lines_to_parse*iter+i<length; i++){
+    cudaMalloc(middle+i, sizeof(char)*sizes[lines_to_parse*iter+i]);
+    //if(iter > 15 && i==55) printf("%d\n", (int)sizes[lines_to_parse*iter+i]);
+    cudaMemcpy(middle[i], js[lines_to_parse*iter+i], sizeof(char)*sizes[lines_to_parse*iter+i], cudaMemcpyHostToDevice);
+    //if(i==1) printf("%s\n", js[lines_to_parse*iter+i]);
+  }
+  cudaMalloc(&sizes_d, sizeof(size_t)*lines_to_parse);
+  //printf("%d , %d\n", length, lines_to_parse*iter);
+  if (lines_to_parse*(iter+1)>length) cudaMemcpy(sizes_d, sizes+(lines_to_parse*iter), sizeof(size_t)*(length - lines_to_parse*iter), cudaMemcpyHostToDevice);
+  else cudaMemcpy(sizes_d, sizes+lines_to_parse*iter, sizeof(size_t)*lines_to_parse, cudaMemcpyHostToDevice);
+  cudaMalloc(&js_d, sizeof(char *)*lines_to_parse);
+  cudaMemcpy(js_d, middle, sizeof(char *)*lines_to_parse, cudaMemcpyHostToDevice);
+  free(middle);
   //js_d = back_d;
 
 }
 
 uint64_t file_read(char ** &records, size_t * &records_size, int &total_size){
   FILE *fp;
-  fp=fopen("./../Large-Json/nspl_small_records.json", "r");
-  long int lines =0;
+  fp=fopen("./../Large-Json/wiki_small_records.json", "r"); // ./inputs/All_purpose_1000.txt ./../Large-Json/wiki_small_records.json
+  long int lines = 0;
 
   if ( fp == NULL ) {
     return 0;
@@ -584,7 +698,9 @@ uint64_t file_read(char ** &records, size_t * &records_size, int &total_size){
       //printf("%s", line);
       records[i] = (char *)malloc(sizeof(char)* read);
       memcpy(records[i], line, sizeof(char)*read);
-      records_size[i] = (size_t)read;
+      *(records[i]+read-1) = 0;
+      records_size[i] = (size_t)(read);
+      //if(i==1) {printf("%s\n", records[i]); printf("%ld\n", records_size[i]);}
       i++;
 
   }
@@ -612,31 +728,50 @@ int main(int argc, char **argv)
   size_t * sizes;
   int total_size;
 
+  start = clock();
   uint64_t read_byte_size = file_read(js, sizes, total_size);
+  end = clock();
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+
+  //printf("%s\n", js[1]);
+  //printf("%ld\n", sizes[1]);
+  printf("total lines of file: %d\n", total_size);
   double line_average_size = read_byte_size/total_size;
   printf("line average: %f\n", line_average_size);
   uint32_t lines_to_parse = 33554432/line_average_size;
-  uint32_t line_absolute_size = ((uint32_t) line_average_size << 1) >> 1;
+  //lines_to_parse = lines_to_parse > 20000 ? 20000 : lines_to_parse; 
+  uint32_t line_absolute_size = ((uint32_t) line_average_size << 1) >> 2;
+  printf("line absolute size: %d\n", line_absolute_size);
   //32768 65536 131072 262144 524288 1048576 2097152 4194304 8388608 33554432 134217728 536870912 1073741824
   //exit(0);
-  const char **js_d;
-  size_t * sizes_d;
 
+  //lines_to_parse = 10;
   int numBlock = (lines_to_parse + BLOCKSIZE - 1) / BLOCKSIZE;
-
-  host_to_device(js, sizes, js_d, sizes_d, total_size);
+  printf("Blocks: %d\n", numBlock);
+  printf("size of tokens: %ld\n", sizeof(jsmntok_t));
 
   int total_allowed = lines_to_parse;
   int total_count = 0;
   double total_time = 0;
+
+  int counter = 0;
   while(total_count < total_size){
+    const char **js_d;
+    size_t * sizes_d;
+
+    start = clock();
+    host_to_device(js, sizes, js_d, sizes_d, total_size, lines_to_parse, counter);
+    end = clock();
+    std::cout << "Copy Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  
+
     int current_total = total_size - total_count > lines_to_parse ? total_allowed : total_size - total_count;
 
     double iteration_time = 0;
     //char ** temp = (char **)malloc(sizeof(char*)*current_total);
     //cudaMemcpy(temp, js_d, sizeof(char*)*current_total, cudaMemcpyDeviceToHost);
   
-  
+
     //jsmn_parser *p;
     jsmn_parser *p_d;
     jsmn_parser *p = (jsmn_parser *)malloc(sizeof(jsmn_parser)*current_total);
@@ -647,29 +782,52 @@ int main(int argc, char **argv)
 
     //printf("first character: %c\n", *(js[current_total-2]));
 
-
+  
     start = clock();
     cudaMalloc(&t, (current_total*line_absolute_size)*sizeof(jsmntok_t));
     jsmn_init<<<numBlock, BLOCKSIZE>>>(p_d, (size_t)current_total);
+
     cudaDeviceSynchronize();
-  
     //print_d(*(temp), sizes[0]);
     int *error;
     cudaMalloc(&error, sizeof(int)*current_total);
-    jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d+total_count, sizes_d+total_count, t, line_absolute_size, current_total, error);
+    cudaMemset(error, sizeof(int)*current_total, 1);
+      //*******************************//
+      // size_t l_free = 0;
+      // size_t l_Total = 0;
+      // cudaError_t error_id = cudaMemGetInfo(&l_free, &l_Total);
+      // size_t allocated = (l_Total - l_free);
+      // std::cout << "Total: " << l_Total << " Free: " << l_free << " Allocated: " << allocated << std::endl;
+      //*******************************//
+    //printf("%c\n", *((char*)*(js_d+total_count)));
+    jsmn_parse<<<numBlock, BLOCKSIZE>>>(p_d, js_d, sizes_d, t, line_absolute_size, current_total, error);
+
     cudaDeviceSynchronize();
+
     end = clock();
+  
+
+
     iteration_time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
     total_time += iteration_time;
+    //printf("iteration end: %f\n", ((double)(end)/CLOCKS_PER_SEC)*1000);
     std::cout << "Time elapsed: " << std::setprecision (17) << iteration_time << std::endl;
   
     int *error_h = (int*)malloc(sizeof(int)*current_total);
     cudaMemcpy(error_h, error, sizeof(int)*current_total, cudaMemcpyDeviceToHost);
     cudaMemcpy(t_h, t, sizeof(jsmntok_t)*current_total*line_absolute_size, cudaMemcpyDeviceToHost);
     cudaMemcpy(p, p_d, sizeof(jsmn_parser)*current_total, cudaMemcpyDeviceToHost);
-    //printf("%.*s\n", t_h[(current_total-2)*line_absolute_size+5].end - t_h[(current_total-2)*line_absolute_size+5].start,
-    //        js[current_total-2] + t_h[(current_total-2)*line_absolute_size+5].start);
-    //for(int i=0; i<total_size; i++) printf("%d\n", error_h[i]);
+    const int line_number = current_total;
+    const int token_number = 4;
+    // #ifdef JSMN_PARENT_LINKS
+    // printf("Parent index: %d\n", t_h[(current_total-line_number)*line_absolute_size+token_number].parent);
+    // int index_parent = (current_total-line_number)*line_absolute_size+t_h[(current_total-line_number)*line_absolute_size+token_number].parent;
+    // printf("%.*s\n", t_h[index_parent].end - t_h[index_parent].start,
+    //        js[total_count+current_total-line_number] + t_h[index_parent].start);
+    // #endif
+    //printf("%.*s\n", t_h[(current_total-line_number)*line_absolute_size+token_number].end - t_h[(current_total-line_number)*line_absolute_size+token_number].start,
+    //        js[total_count+current_total-line_number] + t_h[(current_total-line_number)*line_absolute_size+token_number].start);
+    //for(int i=0; i<current_total/100; i++) printf("%d\n", error_h[i]);
     free(error_h);
     free(t_h);
     free(p);
@@ -677,10 +835,17 @@ int main(int argc, char **argv)
     cudaFree(t);
     cudaFree(error);
 
-
+    //printf("%s\n", js[current_total-line_number]);
+    //if(counter == 17) break;
+    counter++;
     total_count += current_total;
-    //break;
+    total_free(js_d, sizes_d, total_size, lines_to_parse);
+
   }
+
+  printf("total_count: %d\n", total_count);
+
+  //total_free(js_d, sizes_d, total_size);
 
   /*
   char ** temp = (char **)malloc(sizeof(char*)*total_size);

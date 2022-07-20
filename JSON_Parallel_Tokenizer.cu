@@ -21,9 +21,9 @@
 #include <thrust/transform.h>
 #include <inttypes.h>
 
-#define        MAXLINELENGTH    805306368   //4194304 8388608 33554432 67108864 134217728 268435456 536870912 805306368  1073741824// Max record size
+#define        MAXLINELENGTH    134217728   //4194304 8388608 33554432 67108864 134217728 268435456 536870912 805306368  1073741824// Max record size
                                             //4MB       8MB     32BM    64MB      128MB     256MB     512MB     768MB       1GB
-#define        BUFSIZE       805306368  //4194304 //8388608 33554432 67108864 134217728 268435456 536870912 805306368 1073741824
+#define        BUFSIZE       134217728  //4194304 //8388608 33554432 67108864 134217728 268435456 536870912 805306368 1073741824
 
 enum hypothesis_val {in, out, unknown, fail};
 
@@ -128,15 +128,15 @@ int print_array(long* input, int length, int rows){
     return 1;
   }
 
-int print(uint32_t* input, int length, int rows){
-    for(long i =0; i<rows; i++){
-      for(long j=0; j<length; j++){
-        std::cout << *(input+j+(i*length)) << ' ';
-      }
-      std::cout << std::endl;
-    }
-    return 1;
-}
+// int print(uint32_t* input, int length, int rows){
+//     for(long i =0; i<rows; i++){
+//       for(long j=0; j<length; j++){
+//         std::cout << *(input+j+(i*length)) << ' ';
+//       }
+//       std::cout << std::endl;
+//     }
+//     return 1;
+// }
 
 int print_d(uint32_t* input_d, int length, int rows){
     uint32_t * input;
@@ -1613,7 +1613,7 @@ uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t last_index_tokens){
 }
 
 
-long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double & total_runtime){
+uint32_t start(uint8_t * block, uint64_t size, int bLoopCompleted, uint32_t* res, double & total_runtime){
     if(bLoopCompleted == 1) return 0;
     uint8_t * block_d;
     uint64_t * parse_tree; 
@@ -1734,7 +1734,7 @@ long start(uint8_t * block, uint64_t size, int bLoopCompleted, long* res, double
     //return 0; //For now
 }
 
-long * readFilebyLine(char* name){
+uint32_t * readFilebyLine(char* name){
     clock_t start_time, end_time;
     unsigned long  bytesread;
     //static uint8_t  buf[BUFSIZE];
@@ -1744,7 +1744,7 @@ long * readFilebyLine(char* name){
     int   sizeLeftover=0;
     int   bLoopCompleted = 0;
     long  pos = 0;
-    long * res;
+    uint32_t * res;
     FILE * handle;
     double total_runtime = 0;
 
@@ -1801,14 +1801,14 @@ long * readFilebyLine(char* name){
 
 
 
-long *readFile(char* name){
+uint32_t *readFile(char* name){
     clock_t start_time, end_time;
     unsigned long  bytesread;
     static uint8_t  buf[BUFSIZE];
     int   sizeLeftover=0;
     int   bLoopCompleted = 0;
     long  pos = 0;
-    long * res;
+    uint32_t * res;
     FILE * handle;
     double total_runtime = 0;
     
@@ -1899,7 +1899,7 @@ long *readFile(char* name){
 
 int main(int argc, char **argv)
 {
-  long* result;
+    uint32_t* result;
   if (argv[1] != NULL){
     if( strcmp(argv[1], "-b") == 0 && argv[2] != NULL){
       std::cout << "Batch mode..." << std::endl;
