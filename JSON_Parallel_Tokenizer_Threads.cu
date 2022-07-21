@@ -1360,6 +1360,10 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
     end = clock();
     //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
     
+    start = clock();
+    parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(in_string_d, op_d, in_string_d, size, total_padded_32);
+    cudaStreamSynchronize(0);
+    end = clock();
 
     //print_d(nonquote_scalar_d, total_padded_32, ROW1);
     
@@ -1394,7 +1398,7 @@ uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &las
 
     //print_d(follows_nonquote_scalar_d, total_padded_32, ROW1);
 
-    // cudaFreeAsync(op_d,0);
+    cudaFreeAsync(op_d,0);
     // cudaFreeAsync(follows_nonquote_scalar_d,0);                                                    //Remove later
     // cudaFreeAsync(scalar_d,0);
     // cudaFreeAsync(nonquote_scalar_d,0);
