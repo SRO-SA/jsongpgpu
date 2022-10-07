@@ -164,10 +164,10 @@ simdjson_really_inline void json_structural_indexer::step<128>(const uint8_t *bl
   json_block block_1 = scanner.next(in_1);
   json_block block_2 = scanner.next(in_2);
 
-  std::bitset<64> tmp1(block_1._characters._op);
-  std::bitset<64> tmp2(block_1._characters._whitespace);
-  std::cout << tmp1 << std::endl;
-  std::cout << tmp2 << std::endl;
+  // std::bitset<64> tmp1(block_1._characters._op);
+  // std::bitset<64> tmp2(block_1._characters._whitespace);
+  // std::cout << tmp1 << std::endl;
+  // std::cout << tmp2 << std::endl;
 
   this->next(in_1, block_1, reader.block_index());
   this->next(in_2, block_2, reader.block_index()+64);

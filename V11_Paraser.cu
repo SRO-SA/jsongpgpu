@@ -158,6 +158,63 @@ int printString(char* input, int length, int rows){
   return 1;  
 }
 
+double runMultipleTimes(double(*func)()){ // Unused
+  double runtime = 0.0;
+
+  for(int i=0; i<RUNTIMES; i++){
+    runtime += func();
+  }
+  runtime = runtime/RUNTIMES;
+  step1= step1/RUNTIMES;
+  step2= step2/RUNTIMES;
+  step3= step3/RUNTIMES;
+  step4= step4/RUNTIMES;
+  step5= step5/RUNTIMES; 
+  step6= step6/RUNTIMES; 
+  step7= step7/RUNTIMES; 
+  step8= step8/RUNTIMES;
+  scanStep= scanStep/RUNTIMES; 
+  lastStep= lastStep/RUNTIMES;
+  correct1= correct1/RUNTIMES;
+  correct2= correct2/RUNTIMES;
+  correct3= correct3/RUNTIMES;
+  correct4= correct4/RUNTIMES;
+  //program= program/RUNTIMES;
+  std::cout << "First step mean time for " << RUNTIMES << " number of runs: " << step1 << "ms." << std::endl;
+  std::cout << "Second step mean time for " << RUNTIMES << " number of runs: " << step2 << "ms." << std::endl;
+  std::cout << "Correctenss First step mean time for " << RUNTIMES << " number of runs: " << correct1 << "ms." << std::endl;
+  std::cout << "Correctenss Second step mean time for " << RUNTIMES << " number of runs: " << correct2 << "ms." << std::endl;
+  std::cout << "Correctenss Third step mean time for " << RUNTIMES << " number of runs: " << correct3 << "ms." << std::endl;
+  std::cout << "Correctenss Fourth step mean time for " << RUNTIMES << " number of runs: " << correct4 << "ms." << std::endl;
+  std::cout << "Third step mean time for " << RUNTIMES << " number of runs: " << step3 << "ms." << std::endl;
+  std::cout << "Fourth step mean time for " << RUNTIMES << " number of runs: " <<step4 << "ms." << std::endl;
+  std::cout << "Fifth step mean time for " << RUNTIMES << " number of runs: " << step5 << "ms." << std::endl;
+  std::cout << "Sixth step mean time for " << RUNTIMES << " number of runs: " << step6 << "ms." << std::endl;
+  std::cout << "Seventh step mean time for " << RUNTIMES << " number of runs: " << step7 << "ms." << std::endl;
+  std::cout << "Eighth step mean time for " << RUNTIMES << " number of runs: " << step8 << "ms." << std::endl;
+  std::cout << "Scan step mean time for " << RUNTIMES << " number of runs: " << scanStep << "ms." << std::endl;
+  std::cout << "Last step mean time for " << RUNTIMES << " number of runs: " << lastStep << "ms." << std::endl;
+
+  std::cout << "Mean time for " << RUNTIMES << " number of runs: " << runtime << "ms." << std::endl;
+  //std::cout << "Internal Mean time for " << RUNTIMES << " number of runs: " << program << "ms." << std::endl;
+
+  step1=0;
+  step2=0;
+  step3=0;
+  step4=0;
+  step5=0; 
+  step6=0; 
+  step7=0; 
+  step8=0;
+  scanStep=0; 
+  lastStep=0;
+  correct1=0;
+  correct2=0;
+  correct3=0;
+  correct4=0;
+  return runtime;
+}
+
 __global__
 void inv(int32_t length, int32_t * arr, int32_t * res){
   int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -288,6 +345,12 @@ void initialize(int step, int length, char* strArr, int32_t* res)
     0,0,0,0,
     0,1,0,0
   };
+  // int8_t lowbyte4_g[16] = {      // OPEN CLOSE _B _D
+  //   0,0,0,0,
+  //   0,0,0,0,
+  //   0,0,0,1,
+  //   0,1,0,0
+  // };
   constexpr int8_t highbyte1_g[16] = {     // OPEN CLOSE COMMA 5_ 7_ 2_
     0,0,1,0,
     0,1,0,1,
@@ -299,12 +362,14 @@ void initialize(int step, int length, char* strArr, int32_t* res)
   __shared__ int8_t lowbyte1[16];
   __shared__ int8_t lowbyte2[16];
   __shared__ int8_t lowbyte3[16];
+  //__shared__ int8_t lowbyte4[16];
   __shared__ int8_t highbyte1[16];
   if(tid == 0){
     for(int k=0; k<16; k++){
       lowbyte1[k]=lowbyte1_g[k];
       lowbyte2[k]=lowbyte2_g[k];
       lowbyte3[k]=lowbyte3_g[k];
+      //lowbyte4[k]=lowbyte4_g[k];
       highbyte1[k]=highbyte1_g[k];
     }
 
@@ -323,9 +388,64 @@ void initialize(int step, int length, char* strArr, int32_t* res)
     res[i] = lowbyte1[byte_low]&highbyte1_res;
     res[length+i] = is_open | -is_close;
     res[ROW2*length+i] = is_open | is_close;
+
+    //res[ROW3*length+i] = lowbyte3[byte_low]&highbyte1[byte_high];
+    //res[ROW4*length+i] = !(lowbyte3[byte_low]&highbyte1[byte_high]) ? i : 0; 
+    // if(tid == 0) printf("%d, %c, %d, %d,---- %d, %d, %d, %d, %d\n", 
+    //              index, currentChar, byte_high, byte_low, res[i], res[length+i], res[ROW2*length+i], res[ROW3*length+i], res[ROW4*length+i]);
+    // if(currentChar == OPENBRACKET || currentChar == OPENBRACE || currentChar == COMMA){
+    //   res[i] = 1;
+    // }
+    // if(currentChar == OPENBRACKET || currentChar == OPENBRACE){
+    //   res[length + i] = 1;
+    // }
+    // else if(currentChar == CLOSEBRACKET || currentChar == CLOSEBRACE){
+    //   res[length + i] = -1;
+    //   res[ROW3*length + i] = 1;
+    // }
+    // if(currentChar == OPENBRACE || currentChar == OPENBRACKET || currentChar == CLOSEBRACE || currentChar == CLOSEBRACKET){
+    //   res[ROW2*length + i] = 1;
+    // }
+    // if(currentChar != CLOSEBRACE && currentChar != CLOSEBRACKET){
+    //   res[ROW4*length + i] = i;
+    // }
   }
 }
 
+__global__ 
+void add_depth(char* string, int32_t *arr1, int32_t* arr2, int length){ // Unused
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int32_t i = index; i< length; i+=stride)
+  {
+    if(string[i] == COMMA) arr1[i] = arr1[i] + arr2[i-1];
+  }
+}
+
+__global__
+void changeDepth(int length, char* strArr, char* res) //Unused
+{
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int32_t i = index; i< length; i+=stride)
+  {
+    int currentChar = (int) strArr[i];
+    if(currentChar == COMMA){
+      while(i>0 && (strArr[i-1] == CLOSEBRACKET || strArr[i-1] == CLOSEBRACE)){
+        *(res+i) = *(strArr+i-1);
+        *(res+i-1) = (char)currentChar;
+        i--;
+      }
+      *(res+i) = currentChar;
+      if(strArr[i-1] == OPENBRACKET || strArr[i-1] == OPENBRACE){
+        *(res+i) = (char)I;
+      }
+    }
+    else if(res[i] == 0){
+      *(res+i) = *(strArr+i);
+    }
+  }
+}
 
 inline int32_t findDepthAndCount(int length, int numBlock, int32_t** arr, char * string)
 {
@@ -383,6 +503,242 @@ void extract(int length, int arrLength, char* string, int32_t* arr, char* res)
       res[arr[i]] = string[i];
     }
   }
+}
+
+//INPUT Currectness Check BEGIN
+__global__
+void countNodesRepititionStep(int length, int32_t* arr, int i, int32_t* res){ //Unused
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int32_t j=index; j<length; j+=stride){
+    if(i == -1){
+      res[j] = arr[j];
+      if(j>0 && arr[j]==arr[j-1]){
+        res[length + j] = 1;
+      }
+      else{
+        res[length + j] = 0;
+      }
+    }
+    if(i > -1){
+      int pow2 = 1<<i;
+      res[j] = arr[j];
+      if(j >= pow2){
+        if((arr[j] == arr[j - pow2])){
+          res[length + j] = arr[length + j - pow2] + arr[length + j];
+        }
+        else {
+          res[length + j] = arr[length + j];
+        }
+      }
+      else{
+        res[length + j] = arr[length + j];
+      }
+    }
+  }  
+}
+
+inline int32_t* countNodesRepitition(int length, int numBlock, int32_t* arr) // Unused
+{
+  int nextP2 = length == 1 ? 1 : 1 << (32 - __builtin_clz(length-1));
+  int32_t * cudaArr;
+  int32_t * cudaRes;
+  cudaMallocAsync(&cudaArr, length*ROW2*sizeof(int32_t),0);
+  cudaMallocAsync(&cudaRes, length*ROW2*sizeof(int32_t),0);
+  cudaMemcpyAsync(cudaArr, arr,  length*sizeof(int32_t), cudaMemcpyDeviceToDevice);
+  int i = -1;
+
+  for(int n = nextP2*2; n>1; n=n>>1){
+    countNodesRepititionStep<<<numBlock, BLOCKSIZE>>>(length, cudaArr, i, cudaRes);
+    cudaStreamSynchronize(0);
+    cudaMemcpyAsync(cudaArr, cudaRes,  length*ROW2*sizeof(int32_t), cudaMemcpyDeviceToDevice);    
+    i+=1;
+  }
+  cudaFreeAsync(cudaArr,0);
+  return (cudaRes);
+}
+
+ __global__
+void checkCurrectenss(int length, char* string, int32_t* arr, int32_t* res) //Unsed
+{
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int32_t i=index; i<length; i+=stride){
+    int currentChar = (int) string[i];
+    if(currentChar == CLOSEBRACE || currentChar == CLOSEBRACKET){
+      int32_t value = arr[i] - 1;
+      int32_t base = i - arr[i];
+      while(value>0){
+        base--;
+        if(arr[base]==0){
+          --value;
+        }
+        else{
+          value = value + arr[base] - 1;
+          base = base - arr[base];
+        }
+      }
+      int openning = (int) string[base];
+      if((currentChar == CLOSEBRACE && openning == OPENBRACE)||(currentChar == CLOSEBRACKET && openning == OPENBRACKET)){
+        res[i] = 1;
+      }
+      else{
+        res[i] = 0;
+      }
+    }
+    else{
+      res[i] = 1;
+    }
+  }
+}
+
+__global__
+void set_open_odd_close_even(char* input_d, int32_t* o_o_c_e, int32_t* o_e_c_o, int length){ // Unused
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int32_t i=index; i<length; i+=stride){
+    char currentChar = input_d[i];
+    o_o_c_e[i] = ((i & 1) == ((currentChar & 2) >> 1)); // odd opening and even closing (== works as XNOR)
+    o_e_c_o[i] = ((i & 1) ^  ((currentChar & 2) >> 1)); // even opening and odd closing
+  }
+}
+
+__global__
+void check_is_matched(char* input_d, uint8_t* res_check, int length){ // Ununsed
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int32_t i=index; i<length; i+=stride){
+    char currentChar = input_d[i*2];
+    char nextChar = input_d[i*2+1];
+      uint8_t sixth_bit_i = (currentChar >> 5) & 1;
+      uint8_t second_bit_i = (currentChar >> 1) & 1;
+      uint8_t sixth_bit_i_1 = (nextChar >> 5) & 1;
+      uint8_t second_bit_i_1 = (nextChar >> 1) & 1; 
+
+      res_check[i] = (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1) ? 0 : 1;
+      //matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);    
+
+  }
+}
+
+
+inline bool matching(char *input_d, int length, int iter, int numBlock){ //Unused
+  bool matched = true;
+  if(length < 3 || iter == 1){
+    uint8_t* res_check;
+    int length_divided = length/2;
+    int dividedNumBlock = ((length_divided) + BLOCKSIZE - 1) / BLOCKSIZE;
+
+    cudaMallocAsync(&res_check, sizeof(uint8_t)*length_divided,0);
+    check_is_matched<<<dividedNumBlock, BLOCKSIZE>>>(input_d, res_check, length_divided);
+    matched = thrust::reduce(thrust::cuda::par, res_check, res_check+length_divided) == 0 ? true : false;
+    cudaFreeAsync(res_check,0);
+    // char * res_check = (char *)malloc(sizeof(char)*length);
+    // cudaMemcpyAsync(res_check, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+    // for(int i = 0; i< length; i+=2){
+    //   uint8_t sixth_bit_i = (res_check[i] >> 5) & 1;
+    //   uint8_t second_bit_i = (res_check[i] >> 1) & 1;
+    //   uint8_t sixth_bit_i_1 = (res_check[i+1] >> 5) & 1;
+    //   uint8_t second_bit_i_1 = (res_check[i+1] >> 1) & 1; 
+
+    //   matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);    
+
+    // }
+    // free(res_check);
+
+    // if(!matched){
+    //   std::cout << "-------------Curretness "<< iter << " Step--------------" << std::endl;
+    //   //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //   char * h_char_test = (char*) malloc(sizeof(char)*length);
+    //   cudaMemcpyAsync(h_char_test, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+    //   printString(h_char_test, length, ROW1);
+    //   free(h_char_test);
+    //   std::cout << "-------------End "<< iter <<" Step--------------" << std::endl;
+    
+    // }
+    return matched;
+  }
+  int32_t * o_o_c_e;
+
+  int32_t * o_e_c_o;
+
+
+  cudaMallocAsync(&o_o_c_e, sizeof(int32_t)*length,0);
+  cudaMallocAsync(&o_e_c_o, sizeof(int32_t)*length,0);
+
+
+  set_open_odd_close_even<<<numBlock, BLOCKSIZE>>>(input_d, o_o_c_e, o_e_c_o, length);
+  cudaStreamSynchronize(0);
+
+  char * right_reduced;
+  char * left_reduced;
+  int32_t right_length;
+  int32_t left_length;
+
+  left_length = thrust::count_if(thrust::cuda::par, o_o_c_e, o_o_c_e+length, not_zero());
+  right_length = thrust::count_if(thrust::cuda::par, o_e_c_o, o_e_c_o+length, not_zero());
+  // printf("left: %d\n", left_length);
+  // printf("right: %d\n", right_length);
+
+  if(left_length == 0 || right_length == 0){
+    uint8_t* res_check;
+    int length_divided = length/2;
+    int dividedNumBlock = ((length_divided) + BLOCKSIZE - 1) / BLOCKSIZE;
+    cudaMallocAsync(&res_check, sizeof(uint8_t)*length_divided,0);
+    check_is_matched<<<dividedNumBlock, BLOCKSIZE>>>(input_d, res_check, length_divided);
+    matched = thrust::reduce(thrust::cuda::par, res_check, res_check+length_divided) == 0 ? true : false;
+    cudaFreeAsync(res_check,0);
+    cudaFreeAsync(o_e_c_o,0);
+    cudaFreeAsync(o_o_c_e,0);
+
+    // char * res_check = (char *)malloc(sizeof(char)*length);
+    // cudaMemcpyAsync(res_check, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+    // for(int i = 0; i< length; i+=2){
+    //   uint8_t sixth_bit_i = (res_check[i] >> 5) & 1;
+    //   uint8_t second_bit_i = (res_check[i] >> 1) & 1;
+    //   uint8_t sixth_bit_i_1 = (res_check[i+1] >> 5) & 1;
+    //   uint8_t second_bit_i_1 = (res_check[i+1] >> 1) & 1; 
+
+    //   matched &= (sixth_bit_i == sixth_bit_i_1) && (second_bit_i == 1) && (second_bit_i ^ second_bit_i_1);
+
+    // }
+    // free(res_check);
+    // if(!matched){
+    //   std::cout << "-------------Curretness "<< iter << " Step--------------" << std::endl;
+    //   //std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+    //   char * h_char_test = (char*) malloc(sizeof(char)*length);
+    //   cudaMemcpyAsync(h_char_test, input_d, sizeof(char)*length, cudaMemcpyDeviceToHost);
+    //   printString(h_char_test, length, ROW1);
+    //   free(h_char_test);
+    //   std::cout << "-------------End "<< iter <<" Step--------------" << std::endl;
+    
+    // }
+    return matched;
+  }
+
+  //cudaMemcpyAsync(&right_length, o_e_c_o+length-1, sizeof(int32_t), cudaMemcpyDeviceToHost);
+  //cudaMemcpyAsync(&left_length, o_o_c_e+length-1, sizeof(int32_t), cudaMemcpyDeviceToHost);
+
+
+
+  cudaMallocAsync(&right_reduced, sizeof(char)*right_length,0);
+  cudaMallocAsync(&left_reduced, sizeof(char)*left_length,0);
+
+  thrust::copy_if(thrust::cuda::par, input_d, input_d+length, o_e_c_o, right_reduced, not_zero());
+  thrust::copy_if(thrust::cuda::par, input_d, input_d+length, o_o_c_e, left_reduced, not_zero());
+  bool right_res;
+  bool left_res;
+
+  cudaFreeAsync(o_e_c_o,0);
+  cudaFreeAsync(o_o_c_e,0);
+
+  right_res = matching(right_reduced, right_length, iter>>1, ((length) + BLOCKSIZE - 1) / BLOCKSIZE);
+  left_res = matching(left_reduced, left_length, iter >> 1,  ((length) + BLOCKSIZE - 1) / BLOCKSIZE);
+
+  cudaFreeAsync(right_reduced,0);
+  cudaFreeAsync(left_reduced,0);
+
+  return (right_res && left_res);
 }
 
 inline bool isCorrect(int strLength, int32_t* input, char* string)
@@ -476,6 +832,65 @@ inline bool isCorrect(int strLength, int32_t* input, char* string)
 
   return isCorrect;
   
+  /*
+  int32_t* arr;
+  start = clock();
+  cudaMallocAsync(&arr, arrLength*sizeof(int32_t),0);
+  initialize<<<numBlock, BLOCKSIZE>>>(1, arrLength, res, arr);
+  cudaStreamSynchronize(0);
+  //gpuErrchk( cudaPeekAtLastError() );
+
+  int32_t* longRes;
+  thrust::inclusive_scan(thrust::cuda::par, arr, arr + arrLength, arr);
+  end = clock();
+  correct2 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+  std::cout << "-------------Curretness Second Step--------------" << std::endl;
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (int32_t*) malloc(sizeof(int32_t)*arrLength);
+  // cudaMemcpyAsync(h_long_test, arr, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToHost);
+  // print(h_long_test, arrLength, ROW1);
+  // free(h_long_test);
+  std::cout << "-------------End Second Step--------------" << std::endl;
+
+  start = clock();
+  longRes = countNodesRepitition(arrLength, numBlock, arr);
+  end = clock();
+  correct3 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+  std::cout << "-------------Curretness Third Step--------------" << std::endl;
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (int32_t *)malloc(sizeof(int32_t)*arrLength);
+  // cudaMemcpyAsync(h_long_test, longRes, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToHost); 
+  // print(h_long_test, arrLength, ROW1);
+  // free(h_long_test);
+  std::cout << "-------------End Third Step--------------" << std::endl;
+
+  start = clock();
+  checkCurrectenss<<<numBlock, BLOCKSIZE>>>(arrLength, res, (longRes+arrLength), arr);
+  cudaStreamSynchronize(0);
+  thrust::inclusive_scan(thrust::cuda::par, arr, arr + arrLength, arr);
+  end = clock();
+  correct4 += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+  std::cout << "-------------Curretness Fourth Step--------------" << std::endl;
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(end-start)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // h_long_test = (int32_t *)malloc(sizeof(int32_t)*arrLength);
+  // cudaMemcpyAsync(h_long_test, arr, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToHost); 
+  // print(h_long_test, arrLength, ROW1);
+  // free(h_long_test);
+  std::cout << "-------------End Fourth Step--------------" << std::endl;
+
+  allEnd = clock();
+
+  cudaFreeAsync(res,0);
+  cudaFreeAsync(longRes,0);
+  int32_t isCorrect;
+  cudaMemcpyAsync(&isCorrect, arr+arrLength-1, sizeof(int32_t), cudaMemcpyDeviceToHost);
+  cudaFreeAsync(arr,0);
+  std::cout << "-------------isCorrect--------------" << std::endl;
+  std::cout << "Time elapsed: " << std::setprecision (17) << ((double)(allEnd-allStart)/CLOCKS_PER_SEC)*1000 << std::endl;
+  // printf("%d\n", isCorrect == arrLength);
+  std::cout << "-------------End isCorrect--------------" << std::endl;
+  return isCorrect == arrLength;
+  */
 }
 //INPUT Currectness Check END
 

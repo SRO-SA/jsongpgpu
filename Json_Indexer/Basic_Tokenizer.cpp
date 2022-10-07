@@ -11,6 +11,8 @@
 #include <emmintrin.h>
 #include <string.h>
 #include <inttypes.h>
+#include <time.h>
+
 //#include "simd.h"
 //#include "dom_parser_implementation_real.h"
 #include "json_character_block.h"
@@ -198,31 +200,43 @@ namespace Utils {
 int main(){
     json_character_block b = json_character_block();
     dom_parser_implementation p;
+    clock_t start, end;
+    double time = 0;
+
     p.set_capacity(SIMDJSON_MAXSIZE_BYTES);
     p.set_max_depth(DEFAULT_MAX_DEPTH);
     // Declare path
-    std::string path = "./../inputs/Tokenizetest.txt";
+    std::string path = "./../../Large-Json/google_map_small_records.json";
  
     // Read the contents of the file at the specified path
     std::string str = Utils::readAllText(path);
 
     //std::string str = "{\"k1\":\"v1\",\"k2\":\"v2\",\"k3\":\"v3\",\"k4\":{\"k5\":\"v4\",\"k6\":\"v5\"},\"k7\":[\"v6\",\"v7\",[]],\"k8\":1234}";
+    start = clock();
     bool isValid = validate_utf8(str.c_str(), str.size());
+    end = clock();
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
     //std::cout << isValid << std::endl;
+    std::cout << "Time elapsed: " << time << std::endl;
+    start = clock();
     isValid = p.stage1((uint8_t *) str.c_str(), str.size(), false);
+    end = clock();
+
+    time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
+    std::cout << "Time elapsed: " << time << std::endl;
+
     //std::cout << isValid << std::endl;
     //std::cout << str.size() << std::endl;
-    clock_t start, end;
     double total= 0;
-    for(int i=0; i< p.n_structural_indexes; i++){
+    for(uint32_t i=0; i< p.n_structural_indexes; i++){
         start = clock();
         uint32_t *v = p.structural_indexes.get();
         end = clock();
         total += ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-        printf("%08" PRIx32 " ", v[i]);
-        std::bitset<32> t(v[i]);
-        std::cout << t << std::endl;
-        std::cout << i << std::endl;
+        //printf("%08" PRIx32 " ", v[i]);
+        //std::bitset<32> t(v[i]);
+        //std::cout << t << std::endl;
+        //std::cout << i << std::endl;
     }
     printf("%f\n", total);
     //simd8<uint8_t> buf = simd8<uint8_t>(str)
