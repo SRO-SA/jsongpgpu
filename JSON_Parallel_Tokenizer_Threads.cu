@@ -21,9 +21,9 @@
 #include <thrust/transform.h>
 #include <inttypes.h>
 
-#define        MAXLINELENGTH    268435456   //4194304 8388608 33554432 67108864 134217728 201326592 268435456 536870912 805306368 1073741824// Max record size
+#define        MAXLINELENGTH    134217728   //4194304 8388608 33554432 67108864 134217728 201326592 268435456 536870912 805306368 1073741824// Max record size
                                             //4MB       8MB     32BM    64MB      128MB    192MB     256MB     512MB     768MB       1GB
-#define        BUFSIZE          268435456   //4194304 8388608 33554432 67108864 134217728 201326592 268435456 536870912 805306368 1073741824
+#define        BUFSIZE          134217728   //4194304 8388608 33554432 67108864 134217728 201326592 268435456 536870912 805306368 1073741824
 
 #define AVGGPUCLOCK 1346000000
 
@@ -58,11 +58,23 @@ struct start_input_t
 {
     uint64_t size;
     static std::atomic<double> total_runtime;
+    static std::atomic<double> utf_runtime;
+    static std::atomic<double> tokenize_runtime;
+    static std::atomic<double> multi_to_one_runtime;
+    static std::atomic<double> parser_runtime;
+    static std::atomic<double> move_data_runtime;
+
+
     uint8_t * block;
     uint32_t* res;
 };
 
 std::atomic<double> start_input_t::total_runtime(0);
+std::atomic<double> start_input_t::utf_runtime(0);
+std::atomic<double> start_input_t::tokenize_runtime(0);
+std::atomic<double> start_input_t::multi_to_one_runtime(0);
+std::atomic<double> start_input_t::parser_runtime(0);
+std::atomic<double> start_input_t::move_data_runtime(0);
 
 
 struct not_zero
@@ -354,53 +366,130 @@ void prev(uint32_t current, uint32_t previous, uint32_t& prev1, uint32_t& prev2,
 }
 
 __global__ 
-void is_incomplete(uint8_t* block, uint32_t* prev_incomplete_d, uint32_t* block_compressed_d, uint32_t* is_ascii_d, uint64_t size, int total_padded_32){
-    static const uint32_t max_val = (uint32_t)(0b11000000u-1 << 24) | (uint32_t)(0b11100000u-1 << 16) | (uint32_t)(0b11110000u-1 << 8) | (uint32_t)(255);
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+void is_incomplete(uint32_t* block_compressed_d, uint64_t size, int total_padded_32, bool* one_utf8, int WORDS){
+    int tid = threadIdx.x;
+    __shared__ uint32_t shared_flag;
+    if(tid == 0) shared_flag = 0;
+    __syncthreads();
+    // if(tid==0)printf("f : %d\n", shared_flag);
+    int index = blockIdx.x * blockDim.x + tid;
     int stride = blockDim.x * gridDim.x;
+
     for(long i = index; i< total_padded_32; i+=stride)
     {
+        // unsigned int start_t=0, end_t=0;
+        // int start = i*32;
+        int start = i*WORDS;
+        // start_t = clock();
+        // uint32_t first = start<size ? (uint32_t) block[start] : 0;
+        // uint32_t second = (start+1)<size ? (uint32_t) block[start+1] : 0;
+        // uint32_t third = (start+2)<size ? (uint32_t) block[start+2] : 0;
+        // uint32_t fourth = (start+3)<size ? (uint32_t) block[start+3] : 0;
+        // end_t = clock();
 
-        int start = i*4;
-        uint32_t first = start<size ? (uint32_t) block[start] : 0;
-        uint32_t second = (start+1)<size ? (uint32_t) block[start+1] : 0;
-        uint32_t third = (start+2)<size ? (uint32_t) block[start+2] : 0;
-        uint32_t fourth = (start+3)<size ? (uint32_t) block[start+3] : 0;
+        #pragma unroll
+        for(int j=start; j<size && j<start+WORDS; j++){
+            // if (j==size-2)printf("size-2: %x\n", block_compressed_d[j]);
 
-        uint32_t val = first | second << 8 | third << 16 | fourth << 24;
-        block_compressed_d[i] = val;
-        prev_incomplete_d[i] = __vsubus4(val, max_val);
-        is_ascii_d[i] =  ((val & 0x80808080) == 0);
+            // if (j==size-1)printf("size-1: %x\n", block_compressed_d[j]);
+
+            uint32_t val = block_compressed_d[j];
+            if((val & 0x80808080) != 0) atomicOr(&shared_flag, 1);
+
+        }
+        __syncthreads();
+        // if(i==8880)printf("clock: %f\n", ((double)(end_t-start_t))/AVGGPUCLOCK * 1000);
+
+        // start_t = clock();
+
+        // uint32_t val = block_compressed_d[i];
+        // block_compressed_d[i] = val;
+        // prev_incomplete_d[i] = __vsubus4(val, max_val);
+        //is_ascii_d[i] =  ((val & 0x80808080) == 0);
+        // if((val & 0x80808080) != 0) atomicOr(&shared_flag, 1);
+
+        //bool reg_flag = shared_flag;
+        // if(tid==0)printf("%d: %d\n", i, shared_flag);
+
+        // end_t = clock();
+        // if(i==8880)printf("clock2: %f\n", ((double)(end_t-start_t))/AVGGPUCLOCK * 1000);
 
     }
+    //printf("%d\n", tid);
+    //printf("%d\n", shared_flag);
+    if(tid == 0 && shared_flag) *one_utf8 = true;
+
 }
 
 __global__
-void check_incomplete_ascii(uint32_t* block_compressed_d, uint32_t* prev_incomplete_d, uint32_t* is_ascii_d, uint32_t* error_d, uint64_t size, int total_padded_32){
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+void check_incomplete_ascii(uint32_t* block_compressed_d, uint32_t* error_d, uint64_t size, int total_padded_32, int WORDS){
+    static const uint32_t max_val = (uint32_t)(0b11000000u-1 << 24) | (uint32_t)(0b11100000u-1 << 16) | (uint32_t)(0b11110000u-1 << 8) | (uint32_t)(255); 
+    int tid = threadIdx.x;
+    __shared__ uint32_t shared_error;
+    if(tid == 0) shared_error = 0;
+    __syncthreads();
+    int index = blockIdx.x * blockDim.x + tid;
     int stride = blockDim.x * gridDim.x;
+
     for(long i = index; i< total_padded_32; i+=stride)
     {
-        if(is_ascii_d[i] && i!=0) {error_d[i] = prev_incomplete_d[i-1];}
-        else{
-            uint32_t current = block_compressed_d[i];
-            uint32_t previous = i>0 ? block_compressed_d[i-1] : 0;
-            uint32_t prev1, prev2, prev3;
-            uint32_t sc;
-            uint32_t must32_80_sc;
-            prev(current, previous, prev1, prev2, prev3, size, total_padded_32);
-            //if(i==8569)printf("1: %x, %x, %x\n", prev1, prev2, prev3);
-            check_special_cases(current, prev1, sc, size, total_padded_32);
-            //if(i==8569)printf("2: %x\n", sc);
-            must_be_2_3_continuation_parallel_and_parallel_xor(prev2, prev3, sc, must32_80_sc, size, total_padded_32);
-            //if(i==8569)printf("4: %x\n", must32_80_sc);
-            error_d[i] = must32_80_sc;
-            //if(error_d[i]!=0)printf("I: %x\n", i);
+        int start = i*WORDS;
+        #pragma unroll
+        for(int j=start; j<size && j<start+WORDS; j++){
+            uint32_t current = block_compressed_d[j];
+            uint32_t previous = j>0 ? block_compressed_d[j-1] : 0;
+            uint32_t prev_incomplete = __vsubus4(previous, max_val);
+            //if(i ==0) printf("%ld\n", size);
+            //if ((j*WORDS)+255 >= size) printf("last index: %d\n", j);
+            if((current & 0x80808080) == 0) {
+                atomicExch(&shared_error, prev_incomplete);
+                //shared_error = prev_incomplete;
+                //error_d[i] =  i > 0 ? prev_incomplete : 0;
+            }
+            else{
+                //uint32_t current = block_compressed_d[i];
+                //uint32_t previous = i>0 ? block_compressed_d[i-1] : 0;
+                uint32_t prev1, prev2, prev3;
+                uint32_t sc;
+                uint32_t must32_80_sc;
+                prev(current, previous, prev1, prev2, prev3, size, total_padded_32);
+                //if(i==8569)printf("1: %x, %x, %x\n", prev1, prev2, prev3);
+                check_special_cases(current, prev1, sc, size, total_padded_32);
+                //if(i==8569)printf("2: %x\n", sc);
+                must_be_2_3_continuation_parallel_and_parallel_xor(prev2, prev3, sc, must32_80_sc, size, total_padded_32);
+                //if(i==8569)printf("4: %x\n", must32_80_sc);
+                //shared_error = must32_80_sc;
+                atomicExch(&shared_error, must32_80_sc);
+    
+                //if(error_d[i]!=0)printf("I: %x\n", i);
+            }
+    
+    
 
         }
     }
-
+    __syncthreads();
+    if(tid==0 && shared_error) *error_d = shared_error;
 }
+
+// __global__
+// void do_nothing(uint64_t* input, uint64_t* output, uint64_t size, int total_padded_32){
+//     int index = blockIdx.x * blockDim.x + threadIdx.x;
+//     int stride = blockDim.x * gridDim.x;
+//     for(long i = index; i< total_padded_32; i+=stride)
+//     {
+//         // if(input[i]) {output[i] =  i > 0 ? input[i-1] : 0;}
+//         // else{
+//         //     output[i] = input[i];
+
+//         // }
+//         // int start = i*16;
+//         // for(int j = start; j<total_padded_32 && j<start+16; j++) 
+//         output[i] = input[i];
+
+//     }
+
+// }
 
 
 inline uint8_t prefix_or(uint32_t* is_ascii_d, uint64_t size, int total_padded_32){
@@ -411,13 +500,17 @@ inline uint8_t prefix_or(uint32_t* is_ascii_d, uint64_t size, int total_padded_3
 }
   
 
-inline bool UTF8Validate(uint8_t * block_d, uint64_t size){
-    int total_padded_32 = ((size + 3)/4) ;
+inline bool UTF8Validate(uint32_t * block_d, uint64_t size){
+    int total_padded_32 = size ;
     uint32_t* general_ptr;
     uint32_t* is_ascii_d;
     uint32_t* prev_incomplete_d;
     uint32_t* block_compressed_d;
     uint32_t* error_d;
+    bool one_utf8 = false;
+    bool* one_utf8_d;
+    cudaMallocAsync(&one_utf8_d, sizeof(bool), 0);
+    cudaMemsetAsync(one_utf8_d, 0, sizeof(bool), 0);
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
     cudaEvent_t gpu_start, gpu_stop;
     cudaEventCreate(&gpu_start);
@@ -426,36 +519,123 @@ inline bool UTF8Validate(uint8_t * block_d, uint64_t size){
     //cudaEventSynchronize(gpu_stop);
     //cudaEventElapsedTime(&utf_runtime, gpu_start, gpu_stop);
 
+    ///***  TEST
+    // int total_padded_64 = ((size+3)/4);
+    // int numBlock_64 = (total_padded_64+BLOCKSIZE-1) / BLOCKSIZE;
+
+    // int total_padded_1024 = ((size+7)/8);
+    // int numBlock_1024 = (total_padded_64+BLOCKSIZE-1) / BLOCKSIZE;
+
+    int total_padded_8B = (size+1)/2;
+    int total_padded_16B = (size+3)/4;
+    int total_padded_24B = (size+5)/6;
+    int total_padded_32B = (size+7)/8;
+    int total_padded_64B = (size+15)/16;
+    int total_padded_128B = (size+31)/32;
+    int total_padded_256B = (size+63)/64;
+    int total_padded_512B = (size+127)/128;
+    int total_padded_1024B = (size+255)/256;
+    int total_padded_2048B = (size+511)/512;
+    int total_padded_4096B = (size+1023)/1024;
+
+    // printf("%d\n", total_padded_32);
+    // printf("%d\n", total_padded_8B);
+    // printf("%d\n", total_padded_16B);
+    // printf("%d\n", total_padded_24B);
+    // printf("%d\n", total_padded_32B);
+    // printf("%d\n", total_padded_64B);
+    // printf("%d\n", total_padded_128B);
+    // printf("%d\n", total_padded_256B);
+    // printf("%d\n", total_padded_512B);
+    // printf("%d\n", total_padded_1024B);
+    // printf("%d\n", total_padded_2048B);
+    // printf("%d\n", total_padded_4096B);
+
+
+    int WORDS = 4;
+
+    int numBlock_8B = (total_padded_8B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_16B = (total_padded_16B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_24B = (total_padded_24B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_32B = (total_padded_32B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_64B = (total_padded_64B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_128B = (total_padded_128B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_256B = (total_padded_256B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_512B = (total_padded_512B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_1024B = (total_padded_1024B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_2048B = (total_padded_2048B+BLOCKSIZE-1) / BLOCKSIZE;
+    int numBlock_4096B = (total_padded_4096B+BLOCKSIZE-1) / BLOCKSIZE;
+        
+    // uint64_t* p1;
+    // uint64_t* p2;
+    // cudaMallocAsync(&p1, sizeof(uint64_t)*total_padded_64, 0);
+    // cudaMallocAsync(&p2, sizeof(uint64_t)*total_padded_64, 0);
+
+
+    ///****    
     float check_special_cases_runtime = 0;
 
-    cudaMallocAsync(&general_ptr, sizeof(uint32_t)*total_padded_32*ROW4, 0);
-    is_ascii_d = general_ptr;
-    prev_incomplete_d = general_ptr+total_padded_32;
-    block_compressed_d = general_ptr+total_padded_32*ROW2;
-    error_d = general_ptr+total_padded_32*ROW3;
+    cudaMallocAsync(&general_ptr, sizeof(uint32_t), 0);
+    //cudaMallocAsync(&block_compressed_d, total_padded_32*sizeof(uint32_t), 0);
+    block_compressed_d = block_d;
+    error_d = general_ptr;
     // cudaMallocAsync(&is_ascii_d, sizeof(uint32_t)*total_padded_32, 0);
     // cudaMallocAsync(&prev_incomplete_d, sizeof(uint32_t)*total_padded_32, 0);
     // cudaMallocAsync(&block_compressed_d, sizeof(uint32_t)*total_padded_32, 0);
     // cudaMallocAsync(&error_d, sizeof(uint32_t)*total_padded_32, 0);
 
     // cudaEventRecord(gpu_start);
-    cudaMemsetAsync(error_d, 0, sizeof(uint32_t)*total_padded_32, 0);
-    is_incomplete<<<numBlock, BLOCKSIZE>>>(block_d, prev_incomplete_d, block_compressed_d, is_ascii_d, size, total_padded_32);
-    cudaStreamSynchronize(0);
-    // cudaEventRecord(gpu_stop);
-    // cudaEventSynchronize(gpu_stop);
-    // cudaEventElapsedTime(&check_special_cases_runtime, gpu_start, gpu_stop);
-    // printf("special: %f\n", check_special_cases_runtime);
 
+    //cudaMemcpyAsync(block_compressed_d, block_d, total_padded_32*sizeof(uint32_t), cudaMemcpyHostToDevice, 0);
     // cudaEventRecord(gpu_start);
-    check_incomplete_ascii<<<numBlock, BLOCKSIZE>>>(block_compressed_d, prev_incomplete_d, is_ascii_d, error_d, size, total_padded_32);
-    cudaStreamSynchronize(0);
     // cudaEventRecord(gpu_stop);
     // cudaEventSynchronize(gpu_stop);
     // cudaEventElapsedTime(&check_special_cases_runtime, gpu_start, gpu_stop);
+    // printf("incomplete: %f\n", check_special_cases_runtime);
 
-    uint8_t error = prefix_or(error_d, size, total_padded_32);
+    cudaMemsetAsync(error_d, 0, sizeof(uint32_t), 0);
+    cudaEventRecord(gpu_start);
+    is_incomplete<<<numBlock_16B, BLOCKSIZE>>>(block_compressed_d, size, total_padded_16B, one_utf8_d, WORDS);
+    cudaStreamSynchronize(0);
+    cudaEventRecord(gpu_stop);
+    cudaEventSynchronize(gpu_stop);
+    cudaEventElapsedTime(&check_special_cases_runtime, gpu_start, gpu_stop);
+    printf("incomplete: %f\n", check_special_cases_runtime);
+    cudaMemcpyAsync(&one_utf8, one_utf8_d, sizeof(bool), cudaMemcpyDeviceToHost, 0);
+    cudaFreeAsync(one_utf8_d, 0);
+    //printf("%d\n", one_utf8);
+    if(!one_utf8){ 
+        cudaFreeAsync(general_ptr, 0);
+        //cudaFreeAsync(block_compressed_d, 0);
+        return true;
+    }
+    // cudaMemsetAsync(p1, 1, sizeof(uint64_t)*total_padded_64, 0);
+    // cudaEventRecord(gpu_start);
+    // do_nothing<<<numBlock_64, BLOCKSIZE>>>(p1, p2, size, total_padded_64);
+    // cudaStreamSynchronize(0);
+    // cudaEventRecord(gpu_stop);
+    // cudaEventSynchronize(gpu_stop);
+    // cudaEventElapsedTime(&check_special_cases_runtime, gpu_start, gpu_stop);
+    // printf("nothing: %f\n", check_special_cases_runtime);
+    // cudaFreeAsync(p1,0);
+    // cudaFreeAsync(p2,0);
+
+    //exit(0);
+
+    cudaEventRecord(gpu_start);
+    check_incomplete_ascii<<<numBlock_16B, BLOCKSIZE>>>(block_compressed_d, error_d, size, total_padded_16B, WORDS);
+    cudaStreamSynchronize(0);
+    cudaEventRecord(gpu_stop);
+    cudaEventSynchronize(gpu_stop);
+    cudaEventElapsedTime(&check_special_cases_runtime, gpu_start, gpu_stop);
+    printf("special: %f\n", check_special_cases_runtime);
+
+
+    uint32_t error = 0;
+    cudaMemcpyAsync(&error, error_d, sizeof(uint32_t), cudaMemcpyDeviceToHost, 0);
+    //uint8_t error = prefix_or(error_d, size, total_padded_32);
     cudaFreeAsync(general_ptr, 0);
+    //cudaFreeAsync(block_compressed_d, 0);
     if(error != 0){ printf("Incomplete ASCII!\n"); return false;}
     return true;
 
@@ -683,20 +863,24 @@ void assign_open_close(uint8_t* block_d, uint32_t* open_d, uint32_t* close_d, in
 }
 
 __global__
-void parallel_copy(uint8_t* tokens_d, uint8_t* res_d, uint32_t res_size, uint32_t last_index_tokens){
+void parallel_copy(uint8_t* tokens_d, uint32_t* tokens_index_d, uint8_t* res_d, uint32_t* res_index_d, uint32_t res_size, uint32_t last_index_tokens){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(uint32_t i = index; i< last_index_tokens; i+=stride)
     {
         if(i == 0){
+            uint32_t last_actual_index = tokens_index_d[last_index_tokens-1];
             res_d[0] = '[';
+            res_index_d[0] = 0;
             res_d[res_size-2] = ']';
+            res_index_d[res_size-2] = last_actual_index+1;
             res_d[res_size-1] = ',';
+            res_index_d[res_size-1] = last_actual_index+2;
+
         }
         res_d[i+1] = tokens_d[i];
         if(tokens_d[i] == '\n' & i < last_index_tokens - 1) res_d[i+1] = ',';
-        
-
+        res_index_d[i+1] = tokens_index_d[i]+1;        
         
     }
 }
@@ -712,7 +896,7 @@ void count_set_bits(uint32_t* input, uint32_t* total_bits, uint32_t size){
 }
 
 __global__
-void remove_and_copy(uint32_t* set_bit_count, uint32_t* in_string, uint8_t* block_d, uint8_t* in_string_8_d, uint32_t size, uint32_t total_padded_32){
+void remove_and_copy(uint32_t* set_bit_count, uint32_t* in_string, uint8_t* block_d, uint8_t* in_string_8_d, uint32_t* in_string_8_index_d, uint32_t size, uint32_t total_padded_32){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(uint32_t i = index; i< total_padded_32; i+=stride){
@@ -721,13 +905,14 @@ void remove_and_copy(uint32_t* set_bit_count, uint32_t* in_string, uint8_t* bloc
         for(int j = 0; j<32 && i*32+j<size; j++){
             uint8_t current_bit = (in_string[i] >> j) & 1;
             current_bit == 1 ? in_string_8_d[total_before+current_total] = block_d[i*32+j] : NULL;
+            current_bit == 1 ? in_string_8_index_d[total_before+current_total] = i*32+j : NULL;
             current_total += current_bit;
 
         }  
     }
 }
 
-inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &last_index_tokens){
+inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32_t &last_index_tokens, uint32_t* &in_string_out_index_d){
     int total_padded_32 = (size+31)/32 ;
     int numBlock = (total_padded_32 + BLOCKSIZE - 1) / BLOCKSIZE;
     int numBlockBySize = (size + BLOCKSIZE - 1) / BLOCKSIZE;
@@ -825,11 +1010,15 @@ inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32
 
 
     thrust::inclusive_scan(thrust::cuda::par, set_bit_count, set_bit_count+total_padded_32, set_bit_count);
+    cudaMemcpyAsync(&last_index_tokens, set_bit_count+total_padded_32-1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
     uint8_t* in_string_8_d;
-    cudaMallocAsync(&in_string_8_d, size * sizeof(uint8_t),0);
+    uint32_t* in_string_8_index_d;
+    cudaMallocAsync(&in_string_8_d, last_index_tokens * sizeof(uint8_t),0);
+    cudaMallocAsync(&in_string_8_index_d, last_index_tokens * sizeof(uint32_t),0);
 
-    remove_and_copy<<<numBlock, BLOCKSIZE>>>(set_bit_count, in_string_d, block_d, in_string_8_d, size, total_padded_32);
+
+    remove_and_copy<<<numBlock, BLOCKSIZE>>>(set_bit_count, in_string_d, block_d, in_string_8_d, in_string_8_index_d, size, total_padded_32);
     cudaStreamSynchronize(0);
 
     cudaMemcpyAsync(&last_index_tokens, set_bit_count+total_padded_32-1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
@@ -837,7 +1026,7 @@ inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32
 
 
 
-
+    in_string_out_index_d = in_string_8_index_d;
     uint8_t* in_string_out_d;
     in_string_out_d = in_string_8_d;
     ret_size = last_index_tokens;
@@ -847,7 +1036,7 @@ inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32
 
 
 
-inline uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t last_index_tokens){
+inline uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t* tokens_index_d, uint32_t* &res_index_d, uint32_t last_index_tokens){
     clock_t start, end;
     start = clock();
 
@@ -856,8 +1045,10 @@ inline uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t last_index_toke
     uint32_t res_size = last_index_tokens+3;
     uint8_t* res_d;
     cudaMallocAsync(&res_d, sizeof(uint8_t)*res_size,0);
+    cudaMallocAsync(&res_index_d, sizeof(uint32_t)*res_size,0);
 
-    parallel_copy<<<numBlock, BLOCKSIZE>>>(tokens_d, res_d, res_size, last_index_tokens);
+
+    parallel_copy<<<numBlock, BLOCKSIZE>>>(tokens_d, tokens_index_d, res_d, res_index_d, res_size, last_index_tokens);
     
     cudaStreamSynchronize(0);
 
@@ -869,42 +1060,90 @@ inline uint8_t* multi_to_one_record( uint8_t* tokens_d, uint32_t last_index_toke
 
 
 inline void * start(void *start_input){
+    clock_t start, end;
     uint8_t * block = ((start_input_t *)start_input)->block;
     uint64_t size = ((start_input_t *)start_input)->size;
     uint32_t* res = ((start_input_t *)start_input)->res;
     double total_runtime = ((start_input_t *)start_input)->total_runtime;
+    double utf_runtime_thead = ((start_input_t *)start_input)->utf_runtime;
+    double tokenize_runtime_thread = ((start_input_t *)start_input)->tokenize_runtime;
+    double multi_to_one_runtime_thread = ((start_input_t *)start_input)->multi_to_one_runtime;
+    double parser_runtime_thread = ((start_input_t *)start_input)->parser_runtime;
+    double move_data_runtime_thread = ((start_input_t *)start_input)->move_data_runtime;
+
+    float move_data_runtime = 0;
+
+    // uint32_t * block_32 = (uint32_t*)malloc(sizeof(uint32_t)*size_32);
+    // uint32_t* new_block_test = (uint32_t *) block;
+    // for(int j=0; j<size_32; j++){
+    //     int s = j*4;
+    //     printf("%x\n", new_block_test[j]);
+    //     uint32_t first = s < size ? block[s] : 0;
+    //     uint32_t second = s < size ? block[s+1] : 0;
+    //     uint32_t third = s < size ? block[s+2] : 0;
+    //     uint32_t fourth = s < size ? block[s+3] : 0;
+    //     printf("%x %x %x %x\n", first, second, third, fourth);
+
+
+    //     block_32[j] = ( ( fourth << 24) | (third << 16) | (second << 8) | first );
+
+    // }
+    // uint32_t* block_32_d;
+    // cudaMallocAsync(&block_32_d, size_32*sizeof(uint32_t), 0);
+    
+    // start = clock();
+    // cudaMemcpyAsync(block_32_d, (uint32_t *)block, size_32*sizeof(uint32_t), cudaMemcpyHostToDevice, 0);
+    // end = clock();
+    // move_data_runtime += ((float)(end-start)/CLOCKS_PER_SEC)*1000;
+
+
     uint8_t * block_d;
     uint64_t * parse_tree; 
     uint8_t* tokens_d;
-    clock_t start, end;
     cudaEvent_t gpu_start, gpu_stop;
     cudaEventCreate(&gpu_start);
     cudaEventCreate(&gpu_stop);
+    int reminder = size%4;
+    int padding = (4-reminder)&3;
+    uint64_t size_32 = (size + padding)/4;
 
     size_t limit_v;
     float runtime=0, utf_runtime = 0, tokenize_runtime = 0, last_record_runtime = 0, multi_to_one_runtime = 0, parser_runtime=0;
-    cudaMallocAsync(&block_d, size*sizeof(uint8_t),0);
-    cudaMemcpyAsync(block_d, block, sizeof(uint8_t)*size, cudaMemcpyHostToDevice);
+    cudaMallocAsync(&block_d, (size+padding)*sizeof(uint8_t),0);
+    cudaMemsetAsync(block_d, 0, (size+padding)*sizeof(uint8_t), 0);
+    // printf("H size-1 %x\n", ((uint32_t *)block)[size_32-1]);
+    // printf("H size-1 B %x\n", block[size-1]);
+    // printf("H size-2 %x\n", ((uint32_t *)block)[size_32-2]);
+    // printf("H size-2 B %x\n", block[size-2]);
+
+
+    start = clock();
+    cudaMemcpyAsync(block_d, block, sizeof(uint8_t)*size, cudaMemcpyHostToDevice, 0);
+    end = clock();
+    move_data_runtime += ((float)(end-start)/CLOCKS_PER_SEC)*1000;
+
 
     start = clock();
     cudaEventRecord(gpu_start);
-    bool isValidUTF8 = UTF8Validate(block_d, size);
+    bool isValidUTF8 = UTF8Validate(reinterpret_cast<uint32_t *>(block_d), size_32);
     cudaEventRecord(gpu_stop);
     cudaEventSynchronize(gpu_stop);
     end = clock();
     cudaEventElapsedTime(&utf_runtime, gpu_start, gpu_stop);
-
+    //free(block_32);
+    //cudaFreeAsync(block_32_d, 0);
     if(!isValidUTF8) {
         printf("not a valid utf input\n"); 
         exit(0);
     }
-
+    //exit(0);
     uint32_t last_index_tokens;
 
     start = clock();
     cudaEventRecord(gpu_start);
     int ret_size = 0;
-    tokens_d = Tokenize(block_d, size, ret_size, last_index_tokens);
+    uint32_t* tokens_index_d;
+    tokens_d = Tokenize(block_d, size, ret_size, last_index_tokens, tokens_index_d);
     cudaEventRecord(gpu_stop);
     cudaEventSynchronize(gpu_stop);
     end = clock();
@@ -916,27 +1155,50 @@ inline void * start(void *start_input){
 
     start = clock();
     cudaEventRecord(gpu_start);
+    uint32_t* all_in_one_index_d;
     int all_in_one_size = last_index_tokens+3;
-    uint8_t* all_in_one_d =  multi_to_one_record(tokens_d, last_index_tokens);
+    uint8_t* all_in_one_d =  multi_to_one_record(tokens_d, tokens_index_d, all_in_one_index_d, last_index_tokens);
     cudaEventRecord(gpu_stop);
     cudaEventSynchronize(gpu_stop);
     end = clock();
     cudaEventElapsedTime(&multi_to_one_runtime, gpu_start, gpu_stop);
+    // print8_d<uint8_t>(all_in_one_d, all_in_one_size, ROW1);
 
-    
+    cudaFreeAsync(tokens_index_d, 0);    
     cudaFreeAsync(tokens_d,0);
     cudaFreeAsync(block_d,0);
 
-
+    int32_t* result_d;
+    int32_t* result;
+    int result_size;
     start = clock();
     cudaEventRecord(gpu_start);
-    NewRuntime_Parallel_GPU((char *)all_in_one_d, all_in_one_size);
+    result_d = NewRuntime_Parallel_GPU((char *)all_in_one_d, (int32_t *)all_in_one_index_d,  all_in_one_size, result_size);
+    result = (int32_t*)malloc(sizeof(int32_t)*result_size*ROW2);
+
+    // printf("res_size: %d\n", result_size);
     cudaEventRecord(gpu_stop);
     cudaEventSynchronize(gpu_stop);
     end = clock();
     parser_runtime = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
     cudaEventElapsedTime(&parser_runtime, gpu_start, gpu_stop);
-
+    cudaMemcpyAsync(result, result_d, sizeof(int32_t)*result_size*ROW2, cudaMemcpyDeviceToHost, 0);
+    cudaFreeAsync(result_d, 0);
+    // printf("%d\n", *result);
+    //printf("%c\n", block[0]);
+    // printf("%ld\n", size);
+    // for(int k = 1 ; k<*result; k++){
+    //     // printf("child_node_address: %d\n", *(result+k));
+    //     int child_node_address = *(result+k); // node address in array
+    //     int num_child_of_child_node = result[child_node_address]; // node child numbers
+    //     // printf("num_child_of_child_node: %d\n", num_child_of_child_node);
+    //     int child_node_string_index = result[result_size*ROW1+child_node_address]-1;
+    //     // printf("child_node_string_index: %d\n", child_node_string_index);
+    //     //int previous_node_index = k>0 ?  *(result+k-1) : result[0];
+    //     printf("%c ", block[child_node_string_index]);
+    // }
+    // printf("\n");
+    
     runtime = utf_runtime + tokenize_runtime + multi_to_one_runtime + parser_runtime;
 
     cudaStreamSynchronize(0);
@@ -947,12 +1209,24 @@ inline void * start(void *start_input){
     printf("tokenize runtime: %f\n", tokenize_runtime);
     printf("multi to one runtime: %f\n", multi_to_one_runtime);
     printf("parser runtime: %f\n", parser_runtime);
+    printf("move data runtime: %f\n", move_data_runtime);
     printf("total runtime: %f\n", runtime);
+
     printf("---------------------------------------------------\n");
 
 
     for(double temp = ((start_input_t *)start_input)->total_runtime;
         !(((start_input_t *)start_input)->total_runtime).compare_exchange_strong(temp, temp+runtime););
+    for(double temp = ((start_input_t *)start_input)->utf_runtime;
+        !(((start_input_t *)start_input)->utf_runtime).compare_exchange_strong(temp, temp+utf_runtime););
+    for(double temp = ((start_input_t *)start_input)->tokenize_runtime;
+        !(((start_input_t *)start_input)->tokenize_runtime).compare_exchange_strong(temp, temp+tokenize_runtime););
+    for(double temp = ((start_input_t *)start_input)->multi_to_one_runtime;
+        !(((start_input_t *)start_input)->multi_to_one_runtime).compare_exchange_strong(temp, temp+multi_to_one_runtime););
+    for(double temp = ((start_input_t *)start_input)->parser_runtime;
+        !(((start_input_t *)start_input)->parser_runtime).compare_exchange_strong(temp, temp+parser_runtime););
+    for(double temp = ((start_input_t *)start_input)->move_data_runtime;
+        !(((start_input_t *)start_input)->move_data_runtime).compare_exchange_strong(temp, temp+move_data_runtime););
     return NULL;
 }
 
@@ -961,7 +1235,8 @@ inline uint32_t ** readFilebyLine(char* name){
     unsigned long  bytesread;
     //static uint8_t  buf[BUFSIZE];
     static uint8_t*  buf;
-    buf = (uint8_t*)malloc(sizeof(uint8_t)*BUFSIZE);
+    cudaMallocHost(&buf, sizeof(uint8_t)*BUFSIZE);
+    //buf = (uint8_t*)malloc(sizeof(uint8_t)*BUFSIZE);
     const int CPU_threads_m_one = CPUTHREADS - 1;
     int   sizeLeftover=0;
     long  pos = 0;
@@ -1053,7 +1328,17 @@ inline uint32_t ** readFilebyLine(char* name){
     
     printf("==================== total runtime ====================\n\t\t\t %f\n\
 ====================      end      ====================\n", total_runtime); //start_input_t::total_runtime.load()
-    printf("==================== total runtime ====================\n\t\t\t %f\n\
+    printf("==================== utf runtime ====================\n\t\t\t %f\n\
+====================      end      ====================\n", start_input_t::utf_runtime.load()/CPUTHREADS); //start_input_t::total_runtime.load()
+    printf("==================== tokenize runtime ====================\n\t\t\t %f\n\
+====================      end      ====================\n", start_input_t::tokenize_runtime.load()/CPUTHREADS); //start_input_t::total_runtime.load()
+    printf("==================== multi to one runtime ====================\n\t\t\t %f\n\
+====================      end      ====================\n", start_input_t::multi_to_one_runtime.load()/CPUTHREADS); //start_input_t::total_runtime.load()
+    printf("==================== parser runtime ====================\n\t\t\t %f\n\
+====================      end      ====================\n", start_input_t::parser_runtime.load()/CPUTHREADS); //start_input_t::total_runtime.load()
+printf("==================== move data runtime ====================\n\t\t\t %f\n\
+====================      end      ====================\n", start_input_t::move_data_runtime.load()/CPUTHREADS); //start_input_t::total_runtime.load()
+printf("==================== total runtime ====================\n\t\t\t %f\n\
 ====================      end      ====================\n", start_input_t::total_runtime.load()/CPUTHREADS); //start_input_t::total_runtime.load()
 
     fclose(handle);

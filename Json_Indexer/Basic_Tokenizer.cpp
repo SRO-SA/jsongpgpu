@@ -217,13 +217,13 @@ int main(){
     end = clock();
     time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
     //std::cout << isValid << std::endl;
-    std::cout << "Time elapsed: " << time << std::endl;
+    std::cout << "Validation Time elapsed: " << time << std::endl;
     start = clock();
     isValid = p.stage1((uint8_t *) str.c_str(), str.size(), false);
     end = clock();
 
     time = ((double)(end-start)/CLOCKS_PER_SEC)*1000;
-    std::cout << "Time elapsed: " << time << std::endl;
+    std::cout << "Stage1 Time elapsed: " << time << std::endl;
 
     //std::cout << isValid << std::endl;
     //std::cout << str.size() << std::endl;

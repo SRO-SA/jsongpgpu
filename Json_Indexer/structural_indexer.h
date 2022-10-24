@@ -143,12 +143,16 @@ error_code json_structural_indexer::index(const uint8_t *buf, size_t len, dom_pa
   if (partial) { len = trim_partial_utf8(buf, len); }
   buf_block_reader<STEP_SIZE> reader(buf, len);
   json_structural_indexer indexer(parser.structural_indexes.get());
+  // clock_t s=0,e=0;
 
   // Read all but the last block
+  // s = clock();
   while (reader.has_full_block()) {
     indexer.step<STEP_SIZE>(reader.full_block(), reader);
   }
-
+  // e = clock();
+  // double total_start = (((double)(e-s))/CLOCKS_PER_SEC) *1000;
+  // std::cout << total_start << std::endl;
   // Take care of the last block (will always be there unless file is empty)
   uint8_t block[STEP_SIZE];
   if (simdjson_unlikely(reader.get_remainder(block) == 0)) { return EMPTY; }

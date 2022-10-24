@@ -5,8 +5,6 @@
 #include "simd.h"
 #include "json_character_block.h"
 
-
-
 simdjson_really_inline simd8<uint8_t> check_special_cases(const simd8<uint8_t> input, const simd8<uint8_t> prev1) {
 // Bit 0 = Too Short (lead byte/ASCII followed by lead byte/ASCII)
 // Bit 1 = Too Long (ASCII followed by continuation)
@@ -154,8 +152,13 @@ simdjson_really_inline simd8<uint8_t> check_special_cases(const simd8<uint8_t> i
     }
 
     simdjson_really_inline void check_next_input(const simd8x64<uint8_t>& input) {
+      // clock_t s=0, e=0;
+      // s = clock();
       if(simdjson_likely(is_ascii(input))) {
         this->error |= this->prev_incomplete;
+        // e = clock();
+        // double total_start = (((double)(e-s))/CLOCKS_PER_SEC) *1000;
+        // std::cout << total_start << std::endl;
       } else {
         // you might think that a for-loop would work, but under Visual Studio, it is not good enough.
         static_assert((simd8x64<uint8_t>::NUM_CHUNKS == 2) || (simd8x64<uint8_t>::NUM_CHUNKS == 4),
@@ -169,7 +172,12 @@ simdjson_really_inline simd8<uint8_t> check_special_cases(const simd8<uint8_t> i
           this->check_utf8_bytes(input.chunks[2], input.chunks[1]);
           this->check_utf8_bytes(input.chunks[3], input.chunks[2]);
         }
+        // s = clock();
         this->prev_incomplete = is_incomplete(input.chunks[simd8x64<uint8_t>::NUM_CHUNKS-1]);
+        // e = clock();
+        // double total_start = (((double)(e-s))/CLOCKS_PER_SEC) *1000;
+        // printf("%f\n", total_start);
+        // std::cout << total_start << std::endl;
         this->prev_input_block = input.chunks[simd8x64<uint8_t>::NUM_CHUNKS-1];
 
       }

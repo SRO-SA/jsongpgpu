@@ -7,13 +7,18 @@
 
 template<class checker>
 bool generic_validate_utf8(const uint8_t * input, size_t length) {
+    clock_t s, e;
     utf8_checker c{};
     buf_block_reader<64> reader(input, length);
+    s = clock();
     while (reader.has_full_block()) {
       simd8x64<uint8_t> in(reader.full_block());
       c.check_next_input(in);
       reader.advance();
     }
+    e = clock();
+    double total_start = (((double)(e-s))/CLOCKS_PER_SEC) *1000;
+    std::cout << total_start << std::endl;
     uint8_t block[64]{};
     reader.get_remainder(block);
     simd8x64<uint8_t> in(block);

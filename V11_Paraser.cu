@@ -957,7 +957,7 @@ void propagateParents(int length, int32_t* arr, int32_t* keys, int32_t* res){
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   for(int32_t i=index; i<length; i+=stride){
-    res[i] = (keys[i] & i < 0 ) ? arr[arr[i]] : arr[i];
+    res[i] = (keys[i] < 0 && i > 0 ) ? arr[arr[i]] : arr[i];
   } 
 
 }
