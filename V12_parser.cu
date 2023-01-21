@@ -11,8 +11,6 @@
 #include <thrust/device_ptr.h>
 #include <thrust/copy.h>
 #include <thrust/scan.h>
-#include <thrust/gather.h>
-
 #include <string.h>
 #include "JSON_Parallel_Parser_Threads.h"
 
@@ -141,24 +139,20 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 
 int print(int32_t* input, int length, int rows){
-  int out_of_boud_index = 0;
   for(int32_t i =0; i<rows; i++){
     for(int32_t j=0; j < 600; j++){ //232470
       if (j == 503) printf("la In ");
-      if (*(input+j+(i*length)) > length) out_of_boud_index = j;
       std::cout << *(input+j+(i*length)) << ' ';
       //if(*(input+j+(i*length)) == 0)  std::cout << "R: " << i << " I: " << j << " value: " << *(input+j+(i*length)) << ' ';
     }
     std::cout << std::endl;
-    // if(out_of_boud_index > 0) printf("there is out of ound at: %d\n", out_of_boud_index);
-
   }
   return 1;
 }
 
 int printString(char* input, int length, int rows){
   for(int32_t i =0; i<rows; i++){
-    for(int32_t j=0; j<600; j++){
+    for(int32_t j=0; j<length; j++){
       std::cout << *(input+j+(i*length)) << ' ';
     }
     std::cout << std::endl;
@@ -167,30 +161,15 @@ int printString(char* input, int length, int rows){
 }
 
 __global__
-void inv(int32_t length, int32_t* arr1, int32_t* arr2, int32_t * arr3, int32_t * res1 , int32_t * res2, int32_t * res3){ // index, length, node
+void inv(int32_t length, int32_t * arr, int32_t * res, int32_t* index_arr, int32_t* index_res){
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
   for(int32_t i = index; i< length; i+=stride)
   {
-    //if(arr3[i] >= length) printf("out of bound: %d\n", arr[i]);
-    res3[arr3[i]-1] = i;
-    res1[arr3[i]-1] = arr1[i];
-    res2[arr3[i]-1] = arr2[i];
+    res[arr[ROW1*length + i]] = i;
     //index_res[arr[ROW1*length + i]] = index_arr[i];
   }
 }
-
-// __global__
-// void index_inv(int32_t length, int32_t* arr1, int32_t* arr2, int32_t* key_arr, int32_t * res1 , int32_t * res2){
-//   int index = blockIdx.x * blockDim.x + threadIdx.x;
-//   int stride = blockDim.x * gridDim.x;
-//   for(int32_t i = index; i< length; i+=stride)
-//   {
-//     res1[key_arr[i]-1] = arr1[i];
-//     res2[key_arr[i]-1] = arr2[i];
-//     //index_res[arr[ROW1*length + i]] = index_arr[i];
-//   }
-// }
 
 inline int32_t *sort(int length, int numBlock, int32_t * arr, int32_t* input_index_d)
 {
@@ -253,35 +232,20 @@ inline int32_t *sort(int length, int numBlock, int32_t * arr, int32_t* input_ind
 }
 
 __global__ 
-void check_with_next_and_get_length(char* strArr, int32_t* str_index, int32_t* string_length, int32_t* res, int length){
+void check_with_next(char* strArr, int32_t* res, int length){
 
   int tid = threadIdx.x;
   int index = blockIdx.x * blockDim.x + tid;
   int stride = blockDim.x * gridDim.x;
   for(int32_t i = index; i< length; i+=stride){
-    if((i)+1 >= length) break;
-    uint8_t currentChar = strArr[(i)];
-    uint8_t nextChar = strArr[(i)+1];
+    uint8_t currentChar = strArr[(i<<1)];
+    uint8_t nextChar = strArr[(i<<1)+1];
     uint8_t byte_high_current = (currentChar >> 4) & 0x0F;
     uint8_t byte_low_current = (currentChar) & 0x0F;
     uint8_t byte_high_next = (nextChar >> 4) & 0x0F;
     uint8_t byte_low_next = (nextChar) & 0x0F;
 
-    //res[i] = !((byte_high_current == byte_high_next) & (byte_low_current != byte_low_next) & (byte_low_current == 0x0B));
-    //string_length[(i<<1)] = str_index[(i<<1)+1] - str_index[(i<<1)];
-    if(byte_low_current == 0x0B){
-      res[i] = !((byte_high_current == byte_high_next) & (byte_low_current != byte_low_next) & (byte_low_current == 0x0B));
-      string_length[(i)] = str_index[(i)+1] - str_index[(i)]+1;
-    }
-    else if(byte_low_current == 0x0A && byte_low_next == 0x0C){
-      res[i] = 0;
-      //printf("%c, %c\n", currentChar, nextChar);
-      string_length[i+1] = str_index[i];
-    }
-    else {
-      res[i] = 0;
-      //string_length[(i)] = str_index[(i)+1] - str_index[(i)]+1;
-    }
+    res[i] = !((byte_high_current == byte_high_next) & (byte_low_current != byte_low_next) & (byte_low_current == 0x0B));
     //res[i] = ((strArr[i] == OPENBRACE && strArr[i+1] != CLOSEBRACE) || (strArr[i] == OPENBRACKET && strArr[i+1] != CLOSEBRACKET)) ? 1 : 0;
   }
 
@@ -387,6 +351,7 @@ void initialize(int step, int length, char* strArr, int32_t* res)
     
     res[i] = lowbyte1[byte_low]&highbyte1_res;
     res[length+i] = is_open | -is_close;
+    res[ROW2*length+i] = is_open | is_close;
     res[ROW3*length+i] = is_close;
     res[ROW4*length+i] = is_close;
 
@@ -409,7 +374,7 @@ void add_depth(char* string, int32_t *arr1, int32_t* arr2, int length){ // Unuse
   }
 }
 
-inline int32_t findDepthAndCount(int length, int numBlock, int32_t** arr, char ** string, int32_t** string_index, int32_t** string_length)
+inline int32_t findDepthAndCount(int length, int numBlock, int32_t** arr, char * string)
 {
   //cudaMallocAsync(arr, length*ROW3*sizeof(int32_t),0);
   cudaEvent_t gpu_start, gpu_stop;
@@ -418,14 +383,8 @@ inline int32_t findDepthAndCount(int length, int numBlock, int32_t** arr, char *
   cudaEventCreate(&gpu_stop);
   // cudaEventRecord(gpu_start);
 
-
-  // char* h_char_test = (char*)malloc(sizeof(char)*length);
-  // cudaMemcpyAsync(h_char_test, *string, sizeof(char)*length, cudaMemcpyDeviceToHost);
-  // printString(h_char_test, length, ROW1);
-  // free(h_char_test);
-  // std::cout << "----
   //cudaMemset(*arr, 0, ROW3*length*sizeof(int32_t));
-  initialize<<<numBlock, BLOCKSIZE>>>(0, length, *string, *arr);
+  initialize<<<numBlock, BLOCKSIZE>>>(0, length, string, *arr);
   cudaStreamSynchronize(0);
 
   // int32_t* h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW4);
@@ -439,7 +398,7 @@ inline int32_t findDepthAndCount(int length, int numBlock, int32_t** arr, char *
 
   thrust::inclusive_scan(thrust::cuda::par, (*arr), (*arr) + length, (*arr)); //ROW1: node count
   thrust::inclusive_scan(thrust::cuda::par, (*arr) + length, (*arr) + ROW2*length, (*arr) + length); //ROW2: depth count
-  //thrust::exclusive_scan(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*arr) + ROW2*length); //ROW3: Open 1 Close 1 (total Brace/bracket)
+  thrust::exclusive_scan(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*arr) + ROW2*length); //ROW3: Open 1 Close 1 (total Brace/bracket)
   thrust::inclusive_scan_by_key(thrust::cuda::par, (*arr) + ROW4*length, (*arr) + ROW5*length, (*arr) + ROW3*length, (*arr) + ROW3*length); // Consecutive closing
 
 
@@ -448,77 +407,24 @@ inline int32_t findDepthAndCount(int length, int numBlock, int32_t** arr, char *
 
   // std::cout << "-------------Second////// Step--------------" << std::endl;
   // std::cout << "Time elapsed: " << std::setprecision (17) << runtime << std::endl;
+  // int32_t* h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW4);
+  // cudaMemcpyAsync(h_long_test, (*arr), sizeof(int32_t)*length*ROW4, cudaMemcpyDeviceToHost);
+  // print(h_long_test, length, ROW4);
+  // free(h_long_test);
+  // std::cout << "-------------End Second/////// Step--------------" << std::endl;
 
-
-  add_depth<<<numBlock, BLOCKSIZE>>>(*string, (*arr) + length, (*arr) + ROW3*length, length);
+  add_depth<<<numBlock, BLOCKSIZE>>>(string, (*arr) + length, (*arr) + ROW3*length, length);
   cudaStreamSynchronize(0);
+  
+
+  // h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW4);
+  // cudaMemcpyAsync(h_long_test, (*arr), sizeof(int32_t)*length*ROW4, cudaMemcpyDeviceToHost);
+  // print(h_long_test, length, ROW4);
+  // free(h_long_test);
+  // std::cout << "-------------End Second/////// Step--------------" << std::endl;
   int32_t res;
   cudaMemcpyAsync(&res, (*arr)+(ROW2*length)-2, sizeof(int32_t), cudaMemcpyDeviceToHost);
-
-  thrust::transform_if(thrust::cuda::par, (*arr) + length, (*arr) + ROW2*length, *string, (*arr) + length, decrease(), is_opening()); //res :: string
-
-  cudaMemcpyAsync((*arr)+(ROW4*length), (*arr) + length, sizeof(int32_t)*length, cudaMemcpyDeviceToDevice, 0);
-
-  thrust::sequence(thrust::cuda::par, (*arr) + ROW2*length,(*arr) + ROW3*length);
-
-  thrust::stable_sort_by_key(thrust::cuda::par, (*arr)+(ROW4*length), (*arr)+(ROW5*length), (*arr) + ROW2*length);//
-
-  thrust::gather(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*arr), (*arr) + ROW3*length); // node
-
-  cudaMemcpyAsync((*arr), (*arr) + ROW3*length , sizeof(int32_t)*length, cudaMemcpyDeviceToDevice, 0);
-
-
-  thrust::gather(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*string_index), (*arr) + ROW3*length); // string index
-
-  cudaMemcpyAsync(*string_index, (*arr) + ROW3*length, sizeof(int32_t)*length, cudaMemcpyDeviceToDevice, 0);
-
-  thrust::gather(thrust::cuda::par, (*arr) + ROW2*length, (*arr) + ROW3*length, (*string), (char *)((*arr) + ROW3*length)); // string
-
-  // int32_t* h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW5);
-  // cudaMemcpyAsync(h_long_test, (*arr), sizeof(int32_t)*length*ROW5, cudaMemcpyDeviceToHost);
-  // print(h_long_test, length, ROW5);
-  // free(h_long_test);
-  // std::cout << "-------------End Second/////// Step--------------" << std::endl;
-
-
-
-  //cudaMemcpyAsync((char*)((*arr) + ROW3*length), *string, sizeof(char)*length, cudaMemcpyDeviceToDevice, 0);
-
-  //cudaMemcpyAsync(*string, (char *)((*arr) + ROW3*length), sizeof(char)*length, cudaMemcpyDeviceToDevice, 0);
-  // h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW4);
-  // cudaMemcpyAsync(h_long_test, (*string_index), sizeof(int32_t)*length*ROW1, cudaMemcpyDeviceToHost);
-  // print(h_long_test, length, ROW1);
-  // free(h_long_test);
-  // std::cout << "-------------End Second/////// Step--------------" << std::endl;
-
-  // h_char_test = (char*)malloc(sizeof(char)*length);
-  // cudaMemcpyAsync(h_char_test, (char *)((*arr) + ROW3*length), sizeof(char)*length, cudaMemcpyDeviceToHost);
-  // printString(h_char_test, length, ROW1);
-  // free(h_char_test);  
-
-
-  int numBlockDividedTwo = (numBlock >> 1);
-  int arrLengthDiv2 = (length >> 1);
-  check_with_next_and_get_length<<<numBlock, BLOCKSIZE>>>((char *)((*arr) + ROW3*length), *string_index, *string_length, (*arr) + ROW4*length, length); //what is wrong!
-  cudaStreamSynchronize(0);
-
-  int sum = thrust::reduce(thrust::cuda::par, (*arr) + ROW4*length, (*arr) + ROW5*length-arrLengthDiv2);
-  bool isCorrect = sum == 0 ? true : false;
-
-  // int32_t* h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW5);
-  // cudaMemcpyAsync(h_long_test, (*arr), sizeof(int32_t)*length*ROW5, cudaMemcpyDeviceToHost);
-  // print(h_long_test, length, ROW5);
-  // free(h_long_test);
-  // std::cout << "-------------End Second/////// Step--------------" << std::endl;
-  // h_long_test = (int32_t*)malloc(sizeof(int32_t)*length*ROW4);
-  // cudaMemcpyAsync(h_long_test, (*string_length), sizeof(int32_t)*length*ROW1, cudaMemcpyDeviceToHost);
-  // print(h_long_test, length, ROW1);
-  // free(h_long_test);
-  // std::cout << "-------------End Second/////// Step--------------" << std::endl;
-  //int32_t res;
-  //cudaMemcpyAsync(&res, (*arr)+(ROW2*length)-2, sizeof(int32_t), cudaMemcpyDeviceToHost);
-  // printf("%d, %d\n", res, isCorrect);
-  if(res == 0 && isCorrect){
+  if(res == 0){
     return 1;
   }
   return -1;
@@ -600,7 +506,7 @@ inline bool isCorrect(int strLength, int32_t* input, char* string)
 
   int numBlockDividedTwo = (numBlock >> 1);
   int arrLengthDiv2 = (arrLength >> 1);
-  // check_with_next<<<numBlockDividedTwo, BLOCKSIZE>>>(res, instance, arrLengthDiv2); //what is wrong!
+  check_with_next<<<numBlockDividedTwo, BLOCKSIZE>>>(res, instance, arrLengthDiv2); //what is wrong!
   cudaStreamSynchronize(0);
 
   int sum = thrust::reduce(thrust::cuda::par, instance, instance+arrLengthDiv2);
@@ -633,31 +539,24 @@ inline bool isCorrect(int strLength, int32_t* input, char* string)
 //INPUT Currectness Check END
 
 __global__
-void reduce(int length, int arrLength, char * string, int32_t * arr, int32_t* index_arr, int32_t* length_arr, int32_t * res)
+void reduce(int length, int arrLength, char * string, int32_t * arr, int32_t* index_arr, int32_t * res)
 {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;
-  for(int i = index; i< length; i+=stride)
+  for(int32_t i = index; i< length; i+=stride)
   {
     int currentChar = (int)string[i];
-    if((currentChar == OPENBRACKET || currentChar == OPENBRACE || currentChar == COMMA)){
-      // if(i != 0) {
-        //if (index < 600 )printf("index: %d, node: %d, string index %d\n", i, arr[i]-1, index_arr[i]);
-        int res_index = arr[i];
-        res[res_index-1] = arr[length + i]; // Depth
-        res[arrLength + res_index- 1] = res_index - 1; // Node Count
-        res[arrLength*ROW2+res_index- 1] = index_arr[i];
-        res[arrLength*ROW3+res_index-1] = length_arr[i];
-        // if (index < 100)
-        // printf("index: %d, res index: %d, node: %d, string index %d, depth: %d\n", i, res_index, res[arrLength + res_index- 1], res[arrLength*ROW2+res_index- 1], res[res_index-1]);
-
-      // }
-      // else{
-      //   res[arrLength*ROW2] = 0;
-      //   res[arrLength*ROW3] = 0;
-      //   res[0] = 0;
-      //   res[arrLength] = 0;
-      // } 
+    if(i < length && (currentChar == OPENBRACKET || currentChar == OPENBRACE || currentChar == COMMA)){
+      if(i != 0) {
+        res[arr[i-1]] = arr[length + i - 1]; // Depth
+        res[arrLength + arr[i-1]] = arr[i-1]; // Node Count
+        res[arrLength*ROW2+arr[i-1]] = index_arr[i];
+      }
+      else{
+        res[arrLength*ROW2] = 0;
+        res[0] = 0;
+        res[arrLength] = 0;
+      } 
     }
   }
 }
@@ -884,7 +783,7 @@ inline int32_t scan(int length, int32_t* arr)
 }
 
 __global__
-void generateRes(int length, int resLength, int32_t* arr, int32_t* res, int32_t* index_arr, int32_t* length_arr)
+void generateRes(int length, int resLength, int32_t* arr, int32_t* res, int32_t* index_arr)
 {
   int index = blockIdx.x * blockDim.x + threadIdx.x;
   int stride = blockDim.x * gridDim.x;  
@@ -892,18 +791,12 @@ void generateRes(int length, int resLength, int32_t* arr, int32_t* res, int32_t*
     res[arr[length*ROW3 + i]] = arr[length*ROW2 + i];
     res[resLength + arr[length*ROW3 + i]] = index_arr[i];
     // if(i ==0) printf("num children: %d, string index: %d\n", arr[length*ROW2 + i], index_arr[i]);
-    if(arr[i] != -1) {
-      // if(i>length-600)printf("i: %d, final_index: %d\n", i, arr[length*ROW3+ arr[i]]+arr[length+ i]);
-      // if(arr[length*ROW3+ arr[i]]+arr[length+ i] > resLength) printf("is wrong: %d\n", i);
-      res[arr[length*ROW3+ arr[i]]+arr[length+ i]] = arr[length*ROW3+ i];
-      res[resLength+ arr[length*ROW3+ arr[i]]+arr[length+ i]] = length_arr[i];
-    
-    }
+    if(arr[i] != -1) res[arr[length*ROW3+ arr[i]]+arr[length+ i]] = arr[length*ROW3+ i];
   }
 }
 
 
-int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, int length, int & result_size) {
+int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t* input_index_d, int length, int & result_size) {
   //*******************************//
   // size_t l_free = 0;
   // size_t l_Total = 0;
@@ -918,17 +811,6 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
   int32_t* res;
   int32_t* fakeRes;
   int32_t* arr;
-  int32_t* input_length_d;
-  int32_t* input_index_d;
-
-  cudaMallocAsync(&input_index_d, attachedLength*ROW1*sizeof(int32_t),0);
-  cudaMallocAsync(&input_length_d, attachedLength*ROW1*sizeof(int32_t),0);
-  //cudaMallocAsync(&input_length_d, attachedLength*ROW1*sizeof(int32_t),0);
-
-  cudaMemcpyAsync(input_index_d, *real_input_index_d, attachedLength*ROW1*sizeof(int32_t), cudaMemcpyDeviceToDevice,0);
-
-  cudaFreeAsync(*real_input_index_d, 0);
-
   cudaMallocAsync(&arr, attachedLength*ROW5*sizeof(int32_t),0);
   //printf("length: %d\n", attachedLength);
   //char* attacheArr;
@@ -988,7 +870,7 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
   // cudaEventRecord(gpu_start);
   int32_t *d_arr;
   int32_t correctDepth;
-  correctDepth = findDepthAndCount(attachedLength, numBlock, &arr, &input_d, &input_index_d, &input_length_d);
+  correctDepth = findDepthAndCount(attachedLength, numBlock, &arr, input_d);
   // printf("depth: %d\n", correctDepth);
   end = clock();
   // cudaEventRecord(gpu_stop);
@@ -1003,15 +885,8 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
   // print(h_long_test, attachedLength, ROW2);
   // free(h_long_test);
   // std::cout << "-------------End Second Step--------------" << std::endl;
-  // h_char_test = (char*)malloc(sizeof(char)*attachedLength*ROW1);
-  // cudaMemcpyAsync(h_char_test, input_d, sizeof(char)*attachedLength*ROW1, cudaMemcpyDeviceToHost);
-  // printString(h_char_test, attachedLength, ROW1);
-  // free(h_char_test);
-  // std::cout << "-------------End Second Step--------------" << std::endl;
   int32_t arrLength;
-  cudaMemcpyAsync(&arrLength, arr+1, sizeof(int32_t), cudaMemcpyDeviceToHost);
-  arrLength++;
-  //printf("array length: %d\n", arrLength);
+  cudaMemcpyAsync(&arrLength, arr+(attachedLength-2), sizeof(int32_t), cudaMemcpyDeviceToHost);
   //cudaMallocAsync(&res, arrLength*ROW4*sizeof(int32_t),0);
 
 
@@ -1029,8 +904,8 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
 
   if(correctDepth != -1){
     bool correct;
-    // correct = isCorrect(attachedLength, arr+(attachedLength)*ROW2, input_d);
-    if(true){
+    correct = isCorrect(attachedLength, arr+(attachedLength)*ROW2, input_d);
+    if(correct){
       start = clock();
       //printf("         %d\n", attachedLength);
 
@@ -1046,43 +921,16 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
       cudaMallocAsync(&res, arrLength*ROW5*sizeof(int32_t),0);
       // thrust::remove_copy_if(thrust::cuda::par, arr, arr+attachedLength, input_d, res, is_not_open_comma());
       // thrust::remove_copy_if(thrust::cuda::par, arr+attachedLength, arr+attachedLength*ROW2, input_d, res+arrLength, is_not_open_comma());
-      //reduce<<<numBlock, BLOCKSIZE>>>(attachedLength, arrLength, input_d, arr, input_index_d, input_length_d, res); // WHY THAT WIERD NUMBER AT INDEX 0 OF STRING INDEX ARRAY !!!!!!
-      thrust::remove_copy_if(thrust::cuda::par, arr+attachedLength, arr+attachedLength*ROW2, input_d, res, is_not_open_comma()); // depth
-      thrust::remove_copy_if(thrust::cuda::par, arr, arr+attachedLength, (char *)((arr) + ROW3*length), res+arrLength, is_not_open_comma()); // node
-      thrust::remove_copy_if(thrust::cuda::par, input_index_d, input_index_d+attachedLength, (char *)((arr) + ROW3*length), res+arrLength*ROW2, is_not_open_comma()); // index
-      thrust::remove_copy_if(thrust::cuda::par, input_length_d, input_length_d+attachedLength, (char *)((arr) + ROW3*length), res+arrLength*ROW3, is_not_open_comma()); // length
-      // h_long_test = (int32_t*)malloc(sizeof(int32_t)*arrLength*ROW4);
-      // cudaMemcpy(h_long_test, res, sizeof(int32_t)*arrLength*ROW4, cudaMemcpyDeviceToHost);
-      // print(h_long_test, arrLength, ROW4);
-      // free(h_long_test);
-      // std::cout << "-------------End First Step--------------" << std::endl;
-      // cudaMemcpyAsync(input_index_d, res+arrLength*ROW2, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-      // cudaMemcpyAsync(input_length_d, res+arrLength*ROW3, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-
-      
-      inv<<<numBlock, BLOCKSIZE>>>(arrLength, res+arrLength*ROW2, res+arrLength*ROW3, res+arrLength, input_index_d, input_length_d, res+arrLength*ROW4);
+      reduce<<<numBlock, BLOCKSIZE>>>(attachedLength, arrLength, input_d, arr, input_index_d, res); // WHY THAT WIERD NUMBER INDEX 0 OF STRING INDEX ARRAY !!!!!!
       cudaStreamSynchronize(0);
-
-      // index_inv<<<numBlock, BLOCKSIZE>>>(arrLength,  res+arrLength, );
-      // cudaStreamSynchronize(0);
-
-      // cudaMemcpyAsync(input_index_d, res+arrLength*ROW2, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-      // cudaMemcpyAsync(input_length_d, res+arrLength*ROW3, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-      cudaMemcpyAsync(res+arrLength, res+arrLength*ROW4, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-
-
       end = clock();
+      cudaMemcpyAsync(input_index_d+1, res+arrLength*ROW2+1, sizeof(int32_t)*arrLength-1, cudaMemcpyDeviceToDevice, 0);
       //printf("open and comma size: %d\n", arrLength);
-      // h_long_test = (int32_t*)malloc(sizeof(int32_t)*arrLength*ROW4);
-      // cudaMemcpy(h_long_test, res, sizeof(int32_t)*arrLength*ROW4, cudaMemcpyDeviceToHost);
-      // print(h_long_test, arrLength, ROW4);
+      // h_long_test = (int32_t*)malloc(sizeof(int32_t)*arrLength*ROW2);
+      // cudaMemcpyAsync(h_long_test, res, sizeof(int32_t)*arrLength*ROW2, cudaMemcpyDeviceToHost);
+      // print(h_long_test, arrLength, ROW2);
       // free(h_long_test);
       // std::cout << "-------------End First Step--------------" << std::endl;
-
-      cudaMemcpyAsync(input_index_d, res+arrLength*ROW2, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-      cudaMemcpyAsync(input_length_d, res+arrLength*ROW3, sizeof(int32_t)*arrLength, cudaMemcpyDeviceToDevice, 0);
-
-
       // cudaEventRecord(gpu_stop);
       // cudaEventSynchronize(gpu_stop);
       // cudaeventElapsedTime(&elapsed_time, gpu_start, gpu_stop);
@@ -1105,7 +953,7 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
       start = clock();
       // cudaEventRecord(gpu_start);
       cudaMemcpyAsync(arr, res,  arrLength*ROW2*sizeof(int32_t), cudaMemcpyDeviceToDevice);
-      //fakeRes = sortByDepth(arrLength, numBlock, arr, input_index_d);
+      fakeRes = sortByDepth(arrLength, numBlock, arr, input_index_d);
       // cudaEventRecord(gpu_stop);
       // cudaEventSynchronize(gpu_stop);
       // cudaeventElapsedTime(&elapsed_time, gpu_start, gpu_stop);
@@ -1221,11 +1069,10 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
       //cudaMemcpyAsync(arr, fakeRes,  arrLength*ROW4*sizeof(int32_t), cudaMemcpyDeviceToDevice); /////////////////////////
       //cudaFreeAsync(sumRes,0);
       //cudaFreeAsync(fakeRes,0);
-      // printf("result length: %d\n", (arrLength+resLength));
       cudaFreeAsync(res,0);
       cudaMallocAsync(&res, (arrLength+resLength)*sizeof(int32_t)*ROW2,0);
       cudaMemsetAsync(res, 0, (arrLength+resLength)*sizeof(int32_t)*ROW2, 0);
-      generateRes<<<numBlock, BLOCKSIZE>>>(arrLength, arrLength+resLength,  arr, res, input_index_d, input_length_d);
+      generateRes<<<numBlock, BLOCKSIZE>>>(arrLength, arrLength+resLength,  arr, res, input_index_d);
       cudaStreamSynchronize(0);
       // cudaEventRecord(gpu_stop);
       // cudaEventSynchronize(gpu_stop);
@@ -1242,8 +1089,6 @@ int32_t* NewRuntime_Parallel_GPU(char* input_d, int32_t** real_input_index_d, in
       result_size = (arrLength+resLength);
       cudaFreeAsync(arr,0);
       cudaFreeAsync(input_index_d, 0);
-      cudaFreeAsync(input_length_d, 0);
-
       //cudaFreeAsync(res,0);
       allEnd = clock();
       return res;

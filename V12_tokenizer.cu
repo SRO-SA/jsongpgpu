@@ -200,14 +200,13 @@ int print_d(uint32_t* input_d, int length, int rows){
     cudaMemcpyAsync(input, input_d, sizeof(uint32_t)*length*rows, cudaMemcpyDeviceToHost);
 
     for(long i =0; i<rows; i++){
-      for(long j=0; j<100; j++){
+      for(long j=0; j<length; j++){
         std::bitset<32> y(*(input+j+(i*length)));
         if(j == 129) printf("----129----");
         std::cout << y << ' ';
       }
       std::cout << std::endl;
     }
-    free(input);
     return 1;
 }
 
@@ -229,12 +228,11 @@ int print8_d(uint8_t* input_d, int length, int rows){
     cudaMemcpyAsync(input, input_d, sizeof(uint8_t)*length, cudaMemcpyDeviceToHost);
 
     for(long i =0; i<rows; i++){
-        for(long j=0; j<300; j++){
+        for(long j=0; j<length; j++){
             std::cout << (T )*(input+j+(i*length)) << ' ';
         }
         std::cout << std::endl;
     }
-    free(input);
     return 1;
 }
 
@@ -672,42 +670,30 @@ inline bool UTF8Validate(uint32_t * block_d, uint64_t size){
 }
 
 __global__
-void parallel_or_not_not_and_and_shift_right_shift_left_or_not_and(uint32_t* op_d, uint32_t* whitespace_d, uint32_t* in_string_d, uint32_t* follows_nonquote_scalar_d, uint64_t size, int total_padded_32, int WORDS){
+void parallel_or_not_not_and_and_shift_right_shift_left_or_not_and(uint32_t* op_d, uint32_t* whitespace_d, uint32_t* in_string_d, uint32_t* follows_nonquote_scalar_d, uint64_t size, int total_padded_32){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride){
+        uint32_t op = op_d[i];
+        uint32_t whitespace = whitespace_d[i];
+        uint32_t in_string = in_string_d[i];
 
-        int start = i*WORDS;
-        // start_t = clock();
-        // uint32_t first = start<size ? (uint32_t) block[start] : 0;
-        // uint32_t second = (start+1)<size ? (uint32_t) block[start+1] : 0;
-        // uint32_t third = (start+2)<size ? (uint32_t) block[start+2] : 0;
-        // uint32_t fourth = (start+3)<size ? (uint32_t) block[start+3] : 0;
-        // end_t = clock();
-
-        #pragma unroll
-        for(int k=start; k<size && k<start+WORDS; k++){
-            uint32_t op = op_d[k];
-            uint32_t whitespace = whitespace_d[k];
-            uint32_t in_string = in_string_d[k];
-
-            uint32_t scalar = op | whitespace;
-            scalar = ~scalar;
-            in_string = ~in_string;
-            uint32_t nonquote_scalar = scalar & in_string;
-            in_string = in_string & op;
-            uint32_t overflow = nonquote_scalar >> 31;
-            uint32_t follows_nonquote_scalar = nonquote_scalar << 1;
-            follows_nonquote_scalar = follows_nonquote_scalar | overflow;
-            in_string_d[k] = in_string;
-            follows_nonquote_scalar_d[k] = follows_nonquote_scalar;
-        }
+        uint32_t scalar = op | whitespace;
+        scalar = ~scalar;
+        in_string = ~in_string;
+        uint32_t nonquote_scalar = scalar & in_string;
+        in_string = in_string & op;
+        uint32_t overflow = nonquote_scalar >> 31;
+        uint32_t follows_nonquote_scalar = nonquote_scalar << 1;
+        follows_nonquote_scalar = follows_nonquote_scalar | overflow;
+        in_string_d[i] = in_string;
+        follows_nonquote_scalar_d[i] = follows_nonquote_scalar;
     }
 
 }
 
 __global__
-void get(uint8_t* block_d, uint32_t* output1, uint32_t* output2, uint32_t* op_d, uint32_t* whitespace_d, uint64_t size, int total_padded_32){
+void get(uint8_t* block_d, uint32_t* output1, uint32_t* output2, uint64_t size, int total_padded_32){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride)
@@ -716,36 +702,16 @@ void get(uint8_t* block_d, uint32_t* output1, uint32_t* output2, uint32_t* op_d,
         int start = i*32;
         uint32_t res1 = 0;
         uint32_t res2 = 0;
-        uint32_t res_op = 0;
-        uint32_t res_wt = 0;
-
+ 
         for (int j = start; j<start+32 && j<size; j++){
 
             uint8_t block = block_d[j];
-            uint8_t block_low = block & 0x08;
             block == '\\' ? res1 |= 1 << (j-start) : NULL;
 
             block == '\"' ? res2 |= 1 << (j-start) : NULL;
-            //if (block_low != 8) continue;
-            res_op |= (((block == '{' ||
-                    block == '[' ||
-                    block == '}' ||
-                    block == ']' ||
-                    block == ':' ||
-                    block == ','
-                    ) ? 1 : 0) << (j-start)) ;
-            res_wt |= (((block == ' ' ||
-                    block == '\t' ||
-                    //block_d[j] == '\n' ||
-                    block == '\r'
-                    ) ? 1 : 0) << (j-start)) ;
-
         }
         output1[i] = res1;
         output2[i] = res2;
-        op_d[i] = res_op;
-        whitespace_d[i] = res_wt;
-
     }
 }
 
@@ -873,51 +839,34 @@ void classify(uint8_t* block_d, uint32_t* op_d, uint32_t* whitespace_d, uint64_t
 }
 
 __global__
-void find_escaped(uint32_t* backslashes_d, uint32_t* quote_d, uint32_t* real_quote_d, int size, int total_padded_32, int WORDS){
+void find_escaped(uint32_t* backslashes_d, uint32_t* escaped_d, int total_padded_32){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for(long i = index; i< total_padded_32; i+=stride)
     {
+        uint32_t has_overflow = 2;
+        uint32_t even_bits = 0x55555555UL;
+        long j=i-1;
+        if(i==0) has_overflow = 0;
+        while(has_overflow == 2){
+            uint32_t j_backslash = backslashes_d[j];
+            uint32_t follows_escape_t = j_backslash << 1;
+            uint32_t odd_seq_t = j_backslash & ~even_bits & ~follows_escape_t;
+            uint32_t last_zero = ~(j_backslash | odd_seq_t);
+            uint32_t last_one = j_backslash & odd_seq_t;
+            uint32_t last_two_bits = (j_backslash & 0xC0000000UL) >> 30;
 
-        int start = i*WORDS;
-        // start_t = clock();
-        // uint32_t first = start<size ? (uint32_t) block[start] : 0;
-        // uint32_t second = (start+1)<size ? (uint32_t) block[start+1] : 0;
-        // uint32_t third = (start+2)<size ? (uint32_t) block[start+2] : 0;
-        // uint32_t fourth = (start+3)<size ? (uint32_t) block[start+3] : 0;
-        // end_t = clock();
-
-        #pragma unroll
-        for(int k=start; k<size && k<start+WORDS; k++){
-            uint32_t has_overflow = 2;
-            uint32_t even_bits = 0x55555555UL;
-            long j=k-1;
-            if(k==0) has_overflow = 0;
-            while(has_overflow == 2){
-                uint32_t j_backslash = backslashes_d[j];
-                uint32_t follows_escape_t = j_backslash << 1;
-                uint32_t odd_seq_t = j_backslash & ~even_bits & ~follows_escape_t;
-                uint32_t last_zero = ~(j_backslash | odd_seq_t);
-                uint32_t last_one = j_backslash & odd_seq_t;
-                uint32_t last_two_bits = (j_backslash & 0xC0000000UL) >> 30;
-
-                has_overflow = (last_two_bits == 2 || (last_two_bits == 3 && last_one>last_zero)) ? 1 : ((last_two_bits == 3 && last_one==last_zero) ? 2 : 0);
-                j--;
-            }
-            uint32_t backslashes = backslashes_d[k];
-            backslashes &= ~has_overflow;
-            uint32_t follows_escape = (backslashes << 1) | has_overflow;
-            uint32_t odd_seq = backslashes & ~even_bits & ~follows_escape;
-            uint32_t sequence_starting_even_bits = odd_seq + backslashes;
-            uint32_t invert_mask = sequence_starting_even_bits << 1;
-            uint32_t escaped = (even_bits ^ invert_mask) & follows_escape;
-
-            uint32_t not_escaped = ~escaped;
-            real_quote_d[k] = not_escaped & quote_d[k];
-            
-            //escaped_d[i] = (even_bits ^ invert_mask) & follows_escape;
-            
+            has_overflow = (last_two_bits == 2 || (last_two_bits == 3 && last_one>last_zero)) ? 1 : ((last_two_bits == 3 && last_one==last_zero) ? 2 : 0);
+            j--;
         }
+        uint32_t backslashes = backslashes_d[i];
+        backslashes &= ~has_overflow;
+        uint32_t follows_escape = (backslashes << 1) | has_overflow;
+        uint32_t odd_seq = backslashes & ~even_bits & ~follows_escape;
+        uint32_t sequence_starting_even_bits = odd_seq + backslashes;
+        uint32_t invert_mask = sequence_starting_even_bits << 1;
+        escaped_d[i] = (even_bits ^ invert_mask) & follows_escape;
+        
     }
 }
 
@@ -965,17 +914,12 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* tokens_index_d, uint8_t* res_d, 
 }
 
 __global__
-void count_set_bits(uint32_t* input, uint32_t* total_bits, int size, uint32_t total_padded_32, int WORDS){
+void count_set_bits(uint32_t* input, uint32_t* total_bits, uint32_t size){
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
-    for(uint32_t i = index; i< total_padded_32; i+=stride){
-        //UPdate
-        int start = i*WORDS;
-        #pragma unroll
-        for(int k=start; k<size && k<start+WORDS; k++){
-            int total = __popc(input[k]);
-            total_bits[k] = (uint32_t) total;
-        }
+    for(uint32_t i = index; i< size; i+=stride){
+        int total = __popc(input[i]);
+        total_bits[i] = (uint32_t) total;
     }
 }
 
@@ -1007,93 +951,42 @@ inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32
 
     uint32_t* general_ptr;
 
-    cudaMallocAsync(&general_ptr, total_padded_32*sizeof(uint32_t)*ROW5, 0);
+    cudaMallocAsync(&general_ptr, total_padded_32*sizeof(uint32_t)*ROW4, 0);
 
     clock_t start, end;
 
     quote_d = general_ptr;
     backslashes_d = general_ptr+total_padded_32;
-    uint32_t *whitespace_d, *op_d;
-    whitespace_d = general_ptr+total_padded_32*ROW2;
-    op_d = general_ptr+total_padded_32*ROW3;
 
 
     start = clock();
 
-    get<<<numBlock, BLOCKSIZE>>>(block_d, backslashes_d, quote_d, op_d, whitespace_d, size, total_padded_32);
+    get<<<numBlock, BLOCKSIZE>>>(block_d, backslashes_d, quote_d, size, total_padded_32);
     cudaStreamSynchronize(0);
-    //print8_d<uint8_t>(block_d, (int)size, ROW1);
-    //print_d(backslashes_d, total_padded_32, ROW1);
-    //print_d(quote_d, total_padded_32, ROW1);
-    //print_d(op_d, total_padded_32, ROW1);
-    //print_d(whitespace_d, total_padded_32, ROW1);
-
     end = clock();
 
-    int total_padded_8B = (total_padded_32+1)/2;
-    int total_padded_16B = (total_padded_32+3)/4;
-    int total_padded_24B = (total_padded_32+5)/6;
-    int total_padded_32B = (total_padded_32+7)/8;
-    int total_padded_64B = (total_padded_32+15)/16;
-    int total_padded_128B = (total_padded_32+31)/32;
-    int total_padded_256B = (total_padded_32+63)/64;
-    int total_padded_512B = (total_padded_32+127)/128;
-    int total_padded_1024B = (total_padded_32+255)/256;
-    int total_padded_2048B = (total_padded_32+511)/512;
-    int total_padded_4096B = (total_padded_32+1023)/1024;
-
-    // printf("%d\n", total_padded_32);
-    // printf("%d\n", total_padded_8B);
-    // printf("%d\n", total_padded_16B);
-    // printf("%d\n", total_padded_24B);
-    // printf("%d\n", total_padded_32B);
-    // printf("%d\n", total_padded_64B);
-    // printf("%d\n", total_padded_128B);
-    // printf("%d\n", total_padded_256B);
-    // printf("%d\n", total_padded_512B);
-    // printf("%d\n", total_padded_1024B);
-    // printf("%d\n", total_padded_2048B);
-    // printf("%d\n", total_padded_4096B);
-
-
-    int WORDS = 2;
-
-    int numBlock_8B = (total_padded_8B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_16B = (total_padded_16B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_24B = (total_padded_24B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_32B = (total_padded_32B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_64B = (total_padded_64B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_128B = (total_padded_128B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_256B = (total_padded_256B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_512B = (total_padded_512B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_1024B = (total_padded_1024B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_2048B = (total_padded_2048B+BLOCKSIZE-1) / BLOCKSIZE;
-    int numBlock_4096B = (total_padded_4096B+BLOCKSIZE-1) / BLOCKSIZE;
-
-
-    // uint32_t* escaped_d;
-    // escaped_d = general_ptr+total_padded_32*ROW4;
+    uint32_t* escaped_d;
+    escaped_d = general_ptr+total_padded_32*ROW2;
+    start = clock();
+    find_escaped<<<numBlock, BLOCKSIZE>>>(backslashes_d, escaped_d, total_padded_32);
+    cudaStreamSynchronize(0);
+    end = clock();
     uint32_t* real_quote_d;
-    real_quote_d = general_ptr+total_padded_32*ROW4;
-
+    real_quote_d = general_ptr+total_padded_32;
     start = clock();
-    find_escaped<<<numBlock_8B, BLOCKSIZE>>>(backslashes_d, quote_d, real_quote_d, total_padded_32, total_padded_8B, WORDS);
+    parallel_not<<<numBlock, BLOCKSIZE>>>(escaped_d, escaped_d, size, total_padded_32);
     cudaStreamSynchronize(0);
-    //print_d(real_quote_d, total_padded_32, ROW1);
     end = clock();
-    // uint32_t* real_quote_d;
-    // real_quote_d = general_ptr+total_padded_32;
-    // start = clock();
-    // parallel_not<<<numBlock, BLOCKSIZE>>>(escaped_d, escaped_d, size, total_padded_32);
-    // cudaStreamSynchronize(0);
-    // end = clock();
-    // start = clock();
-    // parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(quote_d, escaped_d, real_quote_d, size, total_padded_32);
-    // cudaStreamSynchronize(0);
-    // end = clock();
+    start = clock();
+    parallel_and<uint32_t><<<numBlock, BLOCKSIZE>>>(quote_d, escaped_d, real_quote_d, size, total_padded_32);
+    cudaStreamSynchronize(0);
+    end = clock();
+    
+    uint32_t* in_string_d;
+    in_string_d = general_ptr;
     
     uint32_t* total_one_d;
-    total_one_d = general_ptr;
+    total_one_d = general_ptr+total_padded_32*ROW2;
     uint32_t* total_one_32_d;
     start = clock();
     int total_padded_32_div_32 = (total_padded_32+31)/32;
@@ -1110,45 +1003,37 @@ inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32
     thrust::exclusive_scan(thrust::cuda::par, total_one_32_d, total_one_32_d+(total_padded_32_div_32), total_one_32_d);
     end = clock();
     uint32_t* prefix_sum_ones;
-    //prefix_sum_ones = general_ptr+total_padded_32*ROW3;
-    prefix_sum_ones = general_ptr+total_padded_32;
-
+    prefix_sum_ones = general_ptr+total_padded_32*ROW3;
     start = clock();
 
     scatter<<<smallNumBlock, BLOCKSIZE>>>(total_one_32_d, total_one_d, prefix_sum_ones, total_padded_32_div_32, total_padded_32);
     cudaStreamSynchronize(0);
 
     end = clock();
-    uint32_t* in_string_d;
-    in_string_d = general_ptr;
-    
+
 
 
     start = clock();
-    fact<<<numBlock, BLOCKSIZE>>>(real_quote_d, prefix_sum_ones, in_string_d, total_padded_32_div_32, total_padded_32); // ROW4, ROW0, ROW1
+    fact<<<numBlock, BLOCKSIZE>>>(real_quote_d, prefix_sum_ones, in_string_d, total_padded_32_div_32, total_padded_32); // ROW1, ROW3, ROW0
     cudaStreamSynchronize(0);
     cudaFreeAsync(total_one_32_d,0);
     end = clock();
 
     
-    // uint32_t *whitespace_d, *op_d;
+    uint32_t *whitespace_d, *op_d;
     uint32_t* follows_nonquote_scalar_d;
 
-    // op_d = general_ptr+total_padded_32;
-    follows_nonquote_scalar_d = general_ptr+total_padded_32*ROW4;
-    // whitespace_d = general_ptr+total_padded_32*ROW3;
-    // start = clock();
-    // classify<<<numBlock, BLOCKSIZE>>>(block_d, op_d, whitespace_d, size, total_padded_32);////////////////////
-    // cudaStreamSynchronize(0);
-    // end = clock();
-    //print_d(in_string_d, total_padded_32, ROW1);
-    parallel_or_not_not_and_and_shift_right_shift_left_or_not_and<<<numBlock_8B, BLOCKSIZE>>>(op_d, whitespace_d, in_string_d, follows_nonquote_scalar_d, total_padded_32, total_padded_8B, WORDS);
-    //cudaStreamSynchronize(0);
-    //print_d(in_string_d, total_padded_32, ROW1);
-
+    op_d = general_ptr+total_padded_32;
+    follows_nonquote_scalar_d = general_ptr+total_padded_32*ROW2;
+    whitespace_d = general_ptr+total_padded_32*ROW3;
+    start = clock();
+    classify<<<numBlock, BLOCKSIZE>>>(block_d, op_d, whitespace_d, size, total_padded_32);////////////////////
+    cudaStreamSynchronize(0);
+    end = clock();
+    parallel_or_not_not_and_and_shift_right_shift_left_or_not_and<<<numBlock, BLOCKSIZE>>>(op_d, whitespace_d, in_string_d, follows_nonquote_scalar_d, size, total_padded_32);
     uint32_t* set_bit_count;
     set_bit_count = general_ptr+total_padded_32;
-    count_set_bits<<<numBlock_8B, BLOCKSIZE>>>(in_string_d, set_bit_count, total_padded_32, total_padded_8B, WORDS);
+    count_set_bits<<<numBlock, BLOCKSIZE>>>(in_string_d, set_bit_count, total_padded_32);
     cudaStreamSynchronize(0);
 
 
@@ -1163,7 +1048,6 @@ inline uint8_t * Tokenize(uint8_t* block_d, uint64_t size, int &ret_size, uint32
 
     remove_and_copy<<<numBlock, BLOCKSIZE>>>(set_bit_count, in_string_d, block_d, in_string_8_d, in_string_8_index_d, size, total_padded_32);
     cudaStreamSynchronize(0);
-    //print8_d<uint8_t>(in_string_8_d, last_index_tokens, ROW1);
 
     cudaMemcpyAsync(&last_index_tokens, set_bit_count+total_padded_32-1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
     cudaFreeAsync(general_ptr,0);
@@ -1566,7 +1450,7 @@ inline int32_t * readFilebyLine(char* name){
             cudaDeviceSynchronize();
             end_time = clock();
             #if defined(DEBUG)
-            std::cout << "-------------DEBUG----------------" <<  std::endl;
+            std::cout << std::endl;
             clock_t query_start, query_end;
             double query_time = 0;
             //get_key_value(start_input, res);
@@ -1602,13 +1486,13 @@ inline int32_t * readFilebyLine(char* name){
                 case 1:
                 // query for wiki: $[0].aliases.zh-hant.[1].value
                 error = str_iter.goto_index(1);
-                if(!error) break;
+                if(!error) exit(0);
                 index = str_iter.find_specific_key("aliases");
-                if(!index) break;
-                error = str_iter.goto_index(index);
-                if(!error) break;
+                if(!index) exit(0);
+                error =str_iter.goto_index(index);
+                if(!error) exit(0);
                 index = str_iter.find_specific_key("zh-hant");
-                if(!index) break;
+                if(!index) exit(0);
                 error = str_iter.goto_index(index);
                 if(!error) exit(0);
                 error = str_iter.goto_index(2);
@@ -1647,9 +1531,9 @@ inline int32_t * readFilebyLine(char* name){
                 case 4:
                 // query for walmart: $[0].salePrice
                 error = str_iter.goto_index(1);
-                if(!error) break;
+                if(!error) exit(0);
                 index = str_iter.find_specific_key("salePrice");
-                if(!index) break;
+                if(!index) exit(0);
                 error =str_iter.goto_index(index);
                 json_result = str_iter.get_value();
                 json_key = str_iter.get_key();

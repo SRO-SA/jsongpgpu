@@ -272,15 +272,11 @@ void check_with_next_and_get_length(char* strArr, int32_t* str_index, int32_t* s
     if(byte_low_current == 0x0B){
       res[i] = !((byte_high_current == byte_high_next) & (byte_low_current != byte_low_next) & (byte_low_current == 0x0B));
       string_length[(i)] = str_index[(i)+1] - str_index[(i)]+1;
-    }
-    else if(byte_low_current == 0x0A && byte_low_next == 0x0C){
-      res[i] = 0;
-      //printf("%c, %c\n", currentChar, nextChar);
-      string_length[i+1] = str_index[i];
+
     }
     else {
       res[i] = 0;
-      //string_length[(i)] = str_index[(i)+1] - str_index[(i)]+1;
+      string_length[(i)] = str_index[(i)+1] - str_index[(i)]+1;
     }
     //res[i] = ((strArr[i] == OPENBRACE && strArr[i+1] != CLOSEBRACE) || (strArr[i] == OPENBRACKET && strArr[i+1] != CLOSEBRACKET)) ? 1 : 0;
   }
