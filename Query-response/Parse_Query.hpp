@@ -18,7 +18,9 @@ using namespace std;
 enum tokens_type_enum { 
     OBJECT,
     ARRAY,
-    PRIMITIVE
+    KEYVALUE,
+    VALUE,
+    CLOSING,
 }; 
 
 enum primitive_type_enum { 
@@ -35,12 +37,21 @@ typedef primitive_type_enum primitive_type;
 
 class structural_iterator{
     public:
-        const int32_t* buf_tree_index; // array that holds tree
-        const int32_t* buf_string_index_length; //array that holds string index
+        // const int32_t* buf_tree_index; // array that holds tree
+        // const int32_t* buf_string_index_length; //array that holds string index
         const uint8_t* input_json;  // JSON string
 
-        int current_array_index = 0;
-        int parent_array_index = 0;
+        const int32_t* buf_json_depth; // depth of current character
+        const int32_t* buf_json_start_in_string;    // index of character in the input string
+        const int32_t* buf_json_other_index;    // other side index in the input buffer
+
+        token_type node_type = OBJECT;
+        int node = 0;
+        int node_depth = 1;
+
+
+        // int current_array_index = 0;
+        // int parent_array_index = 0;
 
         int tree_size;  // total size of tree array
         int json_length;    //size of JSON string
@@ -49,6 +60,7 @@ class structural_iterator{
         std::string get_key();
         std::string get_value();
         int find_specific_key(string key);
+        int goto_array_index(int index);
         int goto_index(int index);
         void reset();
         bool has_key();
@@ -57,8 +69,12 @@ class structural_iterator{
 
     structural_iterator(int32_t* buf, uint8_t* json_string,
                       int size, int json_string_length){
-        buf_tree_index =buf;
-        buf_string_index_length = buf+size;
+        //buf_tree_index =buf;
+        //buf_string_index_length = buf+size;
+        buf_json_depth = buf;
+        buf_json_start_in_string = buf + size;
+        buf_json_other_index = buf + size*2;
+        //printf("%d\n", *buf_json_other_index);
         tree_size = size;
 
         input_json = json_string;

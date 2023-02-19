@@ -174,9 +174,9 @@ __host__ __device__ uint32_t set_to_zero(const uint32_t& x) { return 0;}
 
 
 
-int print_array(long* input, int length, int rows){
+int print_array(int32_t* input, int length, int rows){
     for(long i =0; i<rows; i++){
-      for(long j=0; j<length; j++){
+      for(long j=0; j<length&&j<100; j++){
         std::cout << *(input+j+(i*length)) << ' ';
       }
       std::cout << std::endl;
@@ -692,15 +692,15 @@ void parallel_or_not_not_and_and_shift_right_shift_left_or_not_and(uint32_t* op_
             uint32_t in_string = in_string_d[k];
 
             uint32_t scalar = op | whitespace;
-            scalar = ~scalar;
+            //scalar = ~scalar;
             in_string = ~in_string;
-            uint32_t nonquote_scalar = scalar & in_string;
-            in_string = in_string & op;
-            uint32_t overflow = nonquote_scalar >> 31;
-            uint32_t follows_nonquote_scalar = nonquote_scalar << 1;
-            follows_nonquote_scalar = follows_nonquote_scalar | overflow;
+            //uint32_t nonquote_scalar = scalar & in_string;
+            in_string = in_string & scalar;
+            //uint32_t overflow = nonquote_scalar >> 31;
+            //uint32_t follows_nonquote_scalar = nonquote_scalar << 1;
+            //follows_nonquote_scalar = follows_nonquote_scalar | overflow;
             in_string_d[k] = in_string;
-            follows_nonquote_scalar_d[k] = follows_nonquote_scalar;
+            //follows_nonquote_scalar_d[k] = follows_nonquote_scalar;
         }
     }
 
@@ -734,10 +734,10 @@ void get(uint8_t* block_d, uint32_t* output1, uint32_t* output2, uint32_t* op_d,
                     block == ':' ||
                     block == ','
                     ) ? 1 : 0) << (j-start)) ;
-            res_wt |= (((block == ' ' ||
-                    block == '\t' ||
-                    //block_d[j] == '\n' ||
-                    block == '\r'
+            res_wt |= (((//block == ' ' ||
+                    //block == '\t' ||
+                    block == '\n'
+                    //block == '\r'
                     ) ? 1 : 0) << (j-start)) ;
 
         }
@@ -958,8 +958,11 @@ void parallel_copy(uint8_t* tokens_d, uint32_t* tokens_index_d, uint8_t* res_d, 
 
         }
         res_d[i+1] = tokens_d[i];
-        if(tokens_d[i] == '\n' & i < last_index_tokens - 1) res_d[i+1] = ',';
-        res_index_d[i+1] = tokens_index_d[i]+1;        
+        if(tokens_d[i] == '\n' && i < last_index_tokens - 1){
+            res_d[i+1] = ',';
+            // printf("replaced: %c\n", res_d[i+1]);
+        }
+        res_index_d[i+1] = tokens_index_d[i]+1;
         
     }
 }
@@ -991,6 +994,7 @@ void remove_and_copy(uint32_t* set_bit_count, uint32_t* in_string, uint8_t* bloc
             current_bit == 1 ? in_string_8_d[total_before+current_total] = block_d[i*32+j] : NULL;
             current_bit == 1 ? in_string_8_index_d[total_before+current_total] = i*32+j : NULL;
             current_total += current_bit;
+            //if(current_bit == 1 && block_d[i*32+j] == '\n') printf("new line found\n");
 
         }  
     }
@@ -1391,11 +1395,11 @@ inline void * start(void *start_input){
     //cudaFreeHost(result);
     start = clock();
     uint32_t total_tokens = (uint32_t) all_in_one_size;
-    uint32_t total_result_size = (uint32_t) result_size*ROW2;
+    uint32_t total_result_size = (uint32_t) result_size*ROW3;
 
     #if defined (DEBUG)
     printf("total tokens : %d\n", all_in_one_size);
-    printf("result size : %d\n\n", result_size*ROW2);
+    printf("result size : %d\n\n", result_size*ROW3);
     printf("utf runtime: %f\n", utf_runtime);
     printf("tokenize runtime: %f\n", tokenize_runtime);
     printf("multi to one runtime: %f\n", multi_to_one_runtime);
@@ -1475,7 +1479,7 @@ inline int32_t * readFilebyLine(char* name){
     float move_data_runtime_D_H = 0;
     float total_move_data_runtime_D_H = 0;
 
-    checkCuda(cudaMallocHost(&res_buf, sizeof(uint32_t)*BUFSIZE*ROW2));
+    checkCuda(cudaMallocHost(&res_buf, sizeof(uint32_t)*BUFSIZE*ROW3));
     //res_buf = (int32_t*)malloc(sizeof(int32_t)*BUFSIZE*ROW2);
     //buf = (uint8_t*)malloc(sizeof(uint8_t)*BUFSIZE);
     const int CPU_threads_m_one = CPUTHREADS - 1;
@@ -1515,7 +1519,7 @@ inline int32_t * readFilebyLine(char* name){
             //int total_size = 0;
             //pthread_join(threads[j], (void **)(res+j));
             cudaEventRecord(gpu_start);
-            cudaMemcpy(res_buf, res, sizeof(int32_t)*(start_input[0].res_size)*ROW2, cudaMemcpyDeviceToHost);
+            cudaMemcpy(res_buf, res, sizeof(int32_t)*(start_input[0].res_size)*ROW3, cudaMemcpyDeviceToHost);
             //(start_input+j)->res = 0; //res_buf+total_size;
             cudaEventRecord(gpu_stop);
             cudaEventSynchronize(gpu_stop);
@@ -1571,22 +1575,26 @@ inline int32_t * readFilebyLine(char* name){
             double query_time = 0;
             //get_key_value(start_input, res);
             query_start = clock();
+            //print_array(res, start_input[0].res_size, ROW3);
             structural_iterator str_iter(res, start_input[0].block, start_input[0].res_size, start_input[0].size);
+            //print_array(res, start_input[0].res_size, ROW3);
+            //printf("%d, %d, %d\n", res[start_input[0].res_size+ 1]-1, res[1], res[start_input[0].res_size+res[start_input[0].res_size*ROW2+1]]-1);
+            //printf("%c, %d, %c\n", start_input[0].block[res[start_input[0].res_size+1]-1], res[1], start_input[0].block[res[start_input[0].res_size+res[start_input[0].res_size*ROW2+1]]-1]);
             int error = 1;
             int index = 0;
-            int which_file = 4;
+            int which_file = 2;
             string json_result;
             string json_key;
             switch(which_file){
                 // query for google_map: $[0].routes.[0].overview_polyline.points
                 case 0:
-                error = str_iter.goto_index(1);
+                error = str_iter.goto_array_index(1);
                 if(!error) exit(0);
                 index = str_iter.find_specific_key("routes");
                 if(!index) exit(0);
                 error =str_iter.goto_index(index);
                 if(!error) exit(0);
-                error = str_iter.goto_index(1);
+                error = str_iter.goto_array_index(1);
                 if(!error) exit(0);
                 index = str_iter.find_specific_key("overview_polyline");
                 if(!index) exit(0);
@@ -1601,7 +1609,7 @@ inline int32_t * readFilebyLine(char* name){
                 break;
                 case 1:
                 // query for wiki: $[0].aliases.zh-hant.[1].value
-                error = str_iter.goto_index(1);
+                error = str_iter.goto_array_index(1);
                 if(!error) break;
                 index = str_iter.find_specific_key("aliases");
                 if(!index) break;
@@ -1611,7 +1619,7 @@ inline int32_t * readFilebyLine(char* name){
                 if(!index) break;
                 error = str_iter.goto_index(index);
                 if(!error) exit(0);
-                error = str_iter.goto_index(2);
+                error = str_iter.goto_array_index(2);
                 if(!error) exit(0);
                 index = str_iter.find_specific_key("value");
                 if(!index) exit(0);
@@ -1622,16 +1630,18 @@ inline int32_t * readFilebyLine(char* name){
                 break;
                 case 2:
                 // query for nspl: $[0].[1]
-                error = str_iter.goto_index(3);
+                error = str_iter.goto_array_index(3);
+                //printf("Done!\n");
                 if(!error) exit(0);
-                error = str_iter.goto_index(2);
+                error = str_iter.goto_array_index(2);
+                //printf("Done!\n");
                 if(!error) exit(0);
                 json_result = str_iter.get_value();
                 //json_key = str_iter.get_key();
                 break;
                 case 3:
                 // query for twitter: $[0].user.location
-                error = str_iter.goto_index(1);
+                error = str_iter.goto_array_index(1);
                 if(!error) exit(0);
                 index = str_iter.find_specific_key("user");
                 if(!index) exit(0);
@@ -1646,7 +1656,7 @@ inline int32_t * readFilebyLine(char* name){
                 break;
                 case 4:
                 // query for walmart: $[0].salePrice
-                error = str_iter.goto_index(1);
+                error = str_iter.goto_array_index(1);
                 if(!error) break;
                 index = str_iter.find_specific_key("salePrice");
                 if(!index) break;
